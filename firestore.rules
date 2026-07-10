@@ -1,0 +1,94 @@
+rules_version = '2';
+
+// ============================================================================
+// Reglas de seguridad de Firestore para Nexus.
+//
+// Modelo:
+//  - meta/bootstrap: documento centinela. La primera persona en registrarse
+//    lo crea y se convierte en "admin"; el resto queda como "miembro".
+//  - meta/config: ajustes del equipo (p.ej. dominios de correo permitidos).
+//    Solo lectura para todos, escritura solo para admins.
+//  - users/{uid}: perfil de cada persona. Cualquiera autenticado puede leer
+//    la lista (para asignar tareas); solo un admin puede cambiar el rol de
+//    otra persona.
+//  - projects/{id}: visibles y editables solo por sus memberIds (o admins).
+//    Cualquier persona autenticada puede crear un proyecto y añadirse como
+//    miembro al crearlo.
+//  - tasks/{id}: visibles y editables por quien sea miembro del proyecto al
+//    que pertenece la tarea (memberIds del documento en projects/).
+//  - tasks/{id}/comments/{id}: cualquier miembro del equipo puede comentar;
+//    solo el autor o un admin puede editar/borrar un comentario.
+//
+// Esta es una base razonable para un equipo pequeño y de confianza (6-15
+// personas). Si el equipo crece o cambian las necesidades, conviene
+// revisarla — por ejemplo, ahora mismo cualquier persona con cuenta puede
+// crear proyectos, lo cual es intencional para un equipo pequeño.
+// ============================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ---- Bootstrap de administración ----
+    match /meta/bootstrap {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // inmutable una vez creado
+    }
+
+    match /meta/config {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---- Usuarios ----
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+        (request.resource.data.role == 'miembro' ||
+         (request.resource.data.role == 'admin' &&
+          !exists(/databases/$(database)/documents/meta/bootstrap)));
+      allow update: if isSignedIn() &&
+        (isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    // ---- Proyectos ----
+    match /projects/{projectId} {
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.memberIds;
+      allow update: if isSignedIn() && (request.auth.uid in resource.data.memberIds || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
+    // ---- Tareas ----
+    match /tasks/{taskId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.memberIds || isAdmin());
+      allow create: if isSignedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.memberIds;
+      allow update, delete: if isSignedIn() &&
+        (request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.memberIds || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+        allow update, delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // ---- Notificaciones (reservado para la fase 2) ----
+    match /notifications/{notifId} {
+      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+    }
+  }
+}

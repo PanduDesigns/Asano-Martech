@@ -45,7 +45,10 @@ service cloud.firestore {
     }
 
     match /meta/config {
-      allow read: if isSignedIn();
+      // Lectura pública a propósito: solo contiene la lista de dominios de
+      // correo permitidos, y hay que poder comprobarla ANTES de crear la
+      // cuenta (con la persona todavía sin autenticar).
+      allow read: if true;
       allow write: if isAdmin();
     }
 

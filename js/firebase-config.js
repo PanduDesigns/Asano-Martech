@@ -1,14 +1,10 @@
 // ============================================================================
 // CONFIGURACIÓN DE FIREBASE
 // ----------------------------------------------------------------------------
-// Sustituye los valores de abajo por los de TU proyecto de Firebase.
-// Los encuentras en: Firebase Console → ⚙️ Configuración del proyecto →
-// General → "Tus apps" → app web → "Configuración del SDK".
-//
-// Estos valores NO son secretos: están pensados para ir en código público
-// (por eso puedes subir este archivo a GitHub sin problema). La seguridad
-// real la dan las reglas de Firestore/Storage (firestore.rules y
-// storage.rules), no el hecho de ocultar esta configuración.
+// Configuración real del proyecto de Firebase de Nexus (proyecto:
+// asano-martech). No es información sensible: está pensada para ir en
+// código público. La seguridad real la dan las reglas de Firestore/Storage
+// (firestore.rules y storage.rules), no el hecho de ocultar esta config.
 // ============================================================================
 
 export const firebaseConfig = {

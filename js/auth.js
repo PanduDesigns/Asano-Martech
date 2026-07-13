@@ -40,31 +40,41 @@ export async function signUp({ name, email, password }) {
 
   await updateProfile(cred.user, { displayName: name });
 
-  // ¿Es la primera persona en registrarse? Si el documento centinela no
-  // existe todavía, intentamos crearlo: quien lo consiga se convierte en
-  // admin. Las reglas de Firestore son las que realmente hacen cumplir esto.
-  const bootstrapRef = doc(db, "meta", "bootstrap");
-  let role = "miembro";
-  const bootstrapSnap = await getDoc(bootstrapRef);
-  if (!bootstrapSnap.exists()) {
-    try {
-      await setDoc(bootstrapRef, {
-        createdAt: serverTimestamp(),
-        firstAdminUid: cred.user.uid,
-      });
-      role = "admin";
-    } catch (e) {
-      // Alguien se adelantó por una fracción de segundo: seguimos como miembro.
-      role = "miembro";
-    }
-  }
+  try {
+    // ¿Es la primera persona en registrarse? Si el documento centinela
+    // meta/bootstrap no existe todavía, esta persona se convierte en admin.
+    // Importante: creamos primero el documento en `users` (con role admin)
+    // y SOLO DESPUÉS el centinela — las reglas de Firestore exigen que
+    // meta/bootstrap todavía no exista en el momento de crear un admin, así
+    // que si lo creáramos antes, la propia comprobación se bloquearía a sí
+    // misma.
+    const bootstrapRef = doc(db, "meta", "bootstrap");
+    const bootstrapSnap = await getDoc(bootstrapRef);
+    const iAmFirst = !bootstrapSnap.exists();
+    const role = iAmFirst ? "admin" : "miembro";
 
-  await setDoc(doc(db, "users", cred.user.uid), {
-    name,
-    email,
-    role,
-    createdAt: serverTimestamp(),
-  });
+    await setDoc(doc(db, "users", cred.user.uid), {
+      name,
+      email,
+      role,
+      createdAt: serverTimestamp(),
+    });
+
+    if (iAmFirst) {
+      try {
+        await setDoc(bootstrapRef, {
+          createdAt: serverTimestamp(),
+          firstAdminUid: cred.user.uid,
+        });
+      } catch (e) {
+        // Alguien se adelantó por una fracción de segundo creando el
+        // centinela primero: no pasa nada, mi documento de usuario ya
+        // quedó creado como admin en el paso anterior.
+      }
+    }
+  } catch (e) {
+    throw new Error(translateAuthError(e));
+  }
 
   return cred.user;
 }
@@ -83,8 +93,18 @@ export function logOut() {
 }
 
 async function checkAllowedDomain(email) {
-  const configSnap = await getDoc(doc(db, "meta", "config"));
-  const allowed = configSnap.exists() ? (configSnap.data().allowedEmailDomains || []) : [];
+  let allowed = [];
+  try {
+    const configSnap = await getDoc(doc(db, "meta", "config"));
+    allowed = configSnap.exists() ? (configSnap.data().allowedEmailDomains || []) : [];
+  } catch (e) {
+    // Si esta lectura falla por lo que sea (reglas aún no publicadas, red,
+    // etc.) no queremos bloquear el registro por completo: la lista de
+    // dominios permitidos es una comodidad, no el control de seguridad
+    // real (ese lo dan las reglas de Firestore sobre los datos en sí).
+    console.warn("No se pudo comprobar meta/config, se permite el registro:", e);
+    return;
+  }
   if (allowed.length === 0) return; // sin restricción configurada
   const domain = (email.split("@")[1] || "").toLowerCase();
   if (!allowed.includes(domain)) {
@@ -127,6 +147,7 @@ function translateAuthError(e) {
     "auth/wrong-password": "La contraseña no es correcta.",
     "auth/invalid-credential": "Correo o contraseña incorrectos.",
     "auth/too-many-requests": "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
+    "permission-denied": "La base de datos rechazó la operación por permisos. Comprueba que el contenido de firestore.rules esté publicado en Firebase Console → Firestore Database → Reglas.",
   };
   return map[code] || (e && e.message) || "Ha ocurrido un error inesperado.";
 }

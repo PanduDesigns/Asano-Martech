@@ -64,20 +64,18 @@ export function setProjectSections(projectId, sections) {
 }
 
 /**
- * Escucha en tiempo real los proyectos de los que `uid` es miembro.
- * callback(proyectos[]) se llama cada vez que cambia algo.
+ * Escucha en tiempo real TODOS los proyectos del equipo (no solo los tuyos):
+ * en un departamento pequeño, todo el mundo debe poder ver cualquier
+ * proyecto y las tareas que haya dentro, esté o no asignado a esa persona.
  */
-export function subscribeToUserProjects(uid, callback) {
-  const q = query(
-    collection(db, "projects"),
-    where("memberIds", "array-contains", uid)
-  );
+export function subscribeToAllProjects(callback) {
+  const q = query(collection(db, "projects"), where("archived", "==", false));
   return onSnapshot(q, (snap) => {
     const projects = [];
     snap.forEach((d) => projects.push({ id: d.id, ...d.data() }));
     projects.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     callback(projects);
-  }, (err) => console.error("subscribeToUserProjects:", err));
+  }, (err) => console.error("subscribeToAllProjects:", err));
 }
 
 export function subscribeToProject(projectId, callback) {

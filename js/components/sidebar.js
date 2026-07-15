@@ -3,7 +3,7 @@
 // ============================================================================
 import { initials, colorFromString, escapeHtml } from "../utils.js";
 
-export function renderSidebar(container, { projects, currentProjectId, userProfile, onSelectProject, onCreateProject, onLogout }) {
+export function renderSidebar(container, { projects, currentProjectId, isMyTasksActive, myTasksCount, userProfile, onSelectProject, onSelectMyTasks, onCreateProject, onLogout }) {
   const items = projects.map((p) => `
     <button class="sidebar__item${p.id === currentProjectId ? " is-active" : ""}" data-project-id="${p.id}">
       <span class="sidebar__item-dot" style="background:${p.color || "#FCD000"}"></span>
@@ -19,6 +19,12 @@ export function renderSidebar(container, { projects, currentProjectId, userProfi
       <span class="sidebar__brand-dot"></span>
       <span class="sidebar__brand-name">NEXUS</span>
     </div>
+
+    <button class="sidebar__item sidebar__item--pinned${isMyTasksActive ? " is-active" : ""}" id="btn-my-tasks">
+      <span class="sidebar__item-icon">🗂️</span>
+      <span class="sidebar__item-name">Mis tareas</span>
+      ${myTasksCount ? `<span class="sidebar__item-count">${myTasksCount}</span>` : ""}
+    </button>
 
     <span class="sidebar__section-label">Proyectos</span>
     <div class="sidebar__list">
@@ -36,9 +42,10 @@ export function renderSidebar(container, { projects, currentProjectId, userProfi
     </div>
   `;
 
-  container.querySelectorAll(".sidebar__item").forEach((btn) => {
+  container.querySelectorAll(".sidebar__item[data-project-id]").forEach((btn) => {
     btn.addEventListener("click", () => onSelectProject(btn.dataset.projectId));
   });
+  container.querySelector("#btn-my-tasks").addEventListener("click", onSelectMyTasks);
   container.querySelector("#btn-new-project").addEventListener("click", onCreateProject);
   container.querySelector("#btn-logout").addEventListener("click", onLogout);
 }

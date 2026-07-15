@@ -6,6 +6,7 @@ import { escapeHtml } from "../utils.js";
 const VIEWS = [
   { id: "list", label: "Lista" },
   { id: "board", label: "Tablero" },
+  { id: "calendar", label: "Calendario" },
 ];
 
 export function renderTopbar(container, { project, taskCount, currentView, onViewChange, onNewTask, onToggleSidebar }) {

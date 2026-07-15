@@ -1,11 +1,10 @@
 // ============================================================================
-// Inicialización de Firebase. El resto de la app importa `auth`, `db` y
-// `storage` desde aquí en lugar de inicializar Firebase varias veces.
+// Inicialización de Firebase. El resto de la app importa `auth` y `db`
+// desde aquí en lugar de inicializar Firebase varias veces.
 // ============================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-import { getStorage } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-storage.js";
 import { firebaseConfig } from "./firebase-config.js";
 
 const isPlaceholderConfig = firebaseConfig.apiKey === "TU_API_KEY";
@@ -33,4 +32,3 @@ if (isPlaceholderConfig) {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const storage = getStorage(app);

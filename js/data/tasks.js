@@ -34,6 +34,7 @@ export async function createTask(projectId, data) {
     attachments: data.attachments || [],
     customFields: data.customFields || {},
     isComplete: false,
+    isMilestone: data.isMilestone || false,
     completedAt: null,
     order: data.order ?? Date.now(),
     createdBy: data.createdBy,
@@ -81,4 +82,18 @@ export function subscribeToTask(taskId, callback) {
   return onSnapshot(doc(db, "tasks", taskId), (snap) => {
     callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
   });
+}
+
+/** Todas las tareas asignadas a `uid`, en cualquier proyecto (vista "Mis tareas"). */
+export function subscribeToMyTasks(uid, callback) {
+  const q = query(collection(db, "tasks"), where("assigneeIds", "array-contains", uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const tasks = [];
+      snap.forEach((d) => tasks.push({ id: d.id, ...d.data() }));
+      callback(tasks);
+    },
+    (err) => console.error("subscribeToMyTasks:", err)
+  );
 }

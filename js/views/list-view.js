@@ -31,7 +31,7 @@ export function renderListView(container, { project, tasks, teamMembers, onOpenT
         <div class="task-row${task.isComplete ? " is-complete" : ""}" data-task-id="${task.id}">
           <span class="task-row__priority priority-${task.priority}${task.priority === "urgente" && !task.isComplete ? " is-pulse" : ""}"></span>
           <button class="task-row__check${task.isComplete ? " is-checked" : ""}" data-check="${task.id}">${task.isComplete ? "✓" : ""}</button>
-          <span class="task-row__title" data-open="${task.id}">${escapeHtml(task.title)}</span>
+          <span class="task-row__title" data-open="${task.id}">${task.isMilestone ? "🚩 " : ""}${escapeHtml(task.title)}</span>
           <div class="task-row__meta">
             ${task.tags.slice(0, 2).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}
             ${task.subtasks.length ? `<span class="task-card__subtasks">${task.subtasks.filter((s) => s.done).length}/${task.subtasks.length}</span>` : ""}

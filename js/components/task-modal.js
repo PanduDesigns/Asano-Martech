@@ -1,16 +1,17 @@
 // ============================================================================
 // Modal de detalle de tarea. Todo se autoguarda al cambiar (como en Asana):
 // no hay botón de "Guardar" salvo para comentarios nuevos.
+//
+// IMPORTANTE sobre el re-render: la primera vez que llegan datos de Firestore
+// se construye el HTML completo (buildShell). A partir de ahí, cada vez que
+// llega una actualización (incluida la que provoca tu propio autoguardado)
+// se llama a patchShell, que actualiza los valores SIN destruir los campos
+// de texto que puedas tener enfocados — si reconstruyéramos todo el HTML en
+// cada actualización, el campo de título/descripción perdería el foco a
+// media escritura (justo el "petardeo" que se reportó).
 // ============================================================================
 import { updateTask, deleteTask, toggleTaskComplete, subscribeToTask } from "../data/tasks.js";
 import { addComment, subscribeToComments } from "../data/comments.js";
-import { storage } from "../firebase-init.js";
-import {
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject,
-} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-storage.js";
 import {
   el,
   uid,
@@ -21,7 +22,6 @@ import {
   toDateInputValue,
   isOverdue,
   PRIORITY_LABELS,
-  showToast,
 } from "../utils.js";
 
 const PRIORITIES = ["urgente", "alta", "media", "baja"];
@@ -30,6 +30,7 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
   const root = document.getElementById("modal-root");
   let task = null;
   let comments = [];
+  let builtOnce = false;
 
   const overlay = el(`<div class="modal-overlay"><div class="modal"><div style="padding:40px;text-align:center;color:var(--color-text-lo);">Cargando…</div></div></div>`);
   root.appendChild(overlay);
@@ -39,11 +40,16 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
   const unsubTask = subscribeToTask(taskId, (t) => {
     if (!t) { close(true); return; }
     task = t;
-    render();
+    if (!builtOnce) {
+      buildShell();
+      builtOnce = true;
+    } else {
+      patchShell();
+    }
   });
   const unsubComments = subscribeToComments(taskId, (c) => {
     comments = c;
-    renderComments();
+    if (builtOnce) renderComments();
   });
 
   function close(skipCallback) {
@@ -58,13 +64,11 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
     if (e.key === "Escape") close();
   }
 
-  function memberById(uidStr) {
-    return teamMembers.find((m) => m.uid === uidStr);
-  }
-
-  function render() {
+  // --------------------------------------------------------------------
+  // Construcción inicial (una sola vez)
+  // --------------------------------------------------------------------
+  function buildShell() {
     const section = project.sections.find((s) => s.id === task.sectionId) || project.sections[0];
-    const overdue = isOverdue(task.dueDate, task.isComplete);
 
     overlay.innerHTML = `
       <div class="modal">
@@ -84,9 +88,7 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
             </label>
             <label class="field">
               <span class="field__label">Prioridad</span>
-              <div class="chip-select" id="t-priority">
-                ${PRIORITIES.map((p) => `<button type="button" class="chip${p === task.priority ? " is-selected" : ""}" data-priority="${p}"><span class="chip__dot priority-${p}"></span>${PRIORITY_LABELS[p]}</button>`).join("")}
-              </div>
+              <div class="chip-select" id="t-priority"></div>
             </label>
           </div>
 
@@ -97,39 +99,26 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
             </label>
             <label class="field">
               <span class="field__label">Fecha límite</span>
-              <input class="field__input" type="date" id="t-due" value="${toDateInputValue(task.dueDate)}" style="${overdue ? "border-color:var(--color-danger)" : ""}">
+              <input class="field__input" type="date" id="t-due" value="${toDateInputValue(task.dueDate)}">
             </label>
           </div>
 
+          <div id="t-milestone-wrap"></div>
+
           <div class="field">
             <span class="field__label">Responsables</span>
-            <div class="chip-select" id="t-assignees">
-              ${teamMembers.map((m) => `
-                <button type="button" class="chip${task.assigneeIds.includes(m.uid) ? " is-selected" : ""}" data-uid="${m.uid}">
-                  <span class="avatar avatar--sm" style="background:${colorFromString(m.uid)}">${initials(m.name)}</span>
-                  ${escapeHtml(m.name)}
-                </button>`).join("")}
-            </div>
+            <div class="chip-select" id="t-assignees"></div>
           </div>
 
           <div class="field">
             <span class="field__label">Etiquetas</span>
-            <div class="chip-select" id="t-tags">
-              ${task.tags.map((tag) => `<span class="chip is-selected" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)} <span data-remove-tag="${escapeHtml(tag)}" style="cursor:pointer;">✕</span></span>`).join("")}
-            </div>
+            <div class="chip-select" id="t-tags"></div>
             <div class="subtask-add">
               <input class="field__input" id="t-new-tag" placeholder="Añadir etiqueta y pulsar Enter">
             </div>
           </div>
 
-          ${allProjectTasks.filter((t) => t.id !== task.id).length ? `
-          <div class="field">
-            <span class="field__label">Bloqueada por</span>
-            <div class="chip-select" id="t-depends">
-              ${allProjectTasks.filter((t) => t.id !== task.id).map((t) => `
-                <button type="button" class="chip${task.dependsOn.includes(t.id) ? " is-selected" : ""}" data-dep="${t.id}">${t.isComplete ? "✓ " : ""}${escapeHtml(t.title)}</button>`).join("")}
-            </div>
-          </div>` : ""}
+          <div class="field" id="t-depends-wrap"></div>
 
           <label class="field">
             <span class="field__label">Descripción</span>
@@ -145,12 +134,13 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
           </div>
 
           <div class="field">
-            <span class="field__label">Archivos adjuntos</span>
+            <span class="field__label">Enlaces adjuntos</span>
             <div id="t-attachments" style="display:flex;flex-direction:column;gap:6px;"></div>
-            <label class="btn btn--ghost btn--sm" style="width:fit-content;">
-              Subir archivo
-              <input type="file" id="t-file-input" style="display:none;">
-            </label>
+            <div class="modal-row" style="gap:8px;">
+              <input class="field__input" id="t-link-name" placeholder="Nombre (ej. Plano instalación)" style="flex:1;">
+              <input class="field__input" id="t-link-url" placeholder="https://…" style="flex:1.4;">
+              <button class="btn btn--ghost btn--sm" id="t-add-link" type="button">Añadir</button>
+            </div>
           </div>
 
           <div class="section-divider"><span class="section-divider__label">Comentarios</span></div>
@@ -166,16 +156,8 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
       </div>
     `;
 
-    wireEvents();
-    renderSubtasks();
-    renderAttachments();
-    renderComments();
-  }
-
-  function wireEvents() {
-    overlay.querySelector("#t-close").addEventListener("click", () => close());
-
-    overlay.querySelector("#t-complete").addEventListener("click", () => toggleTaskComplete(task.id, !task.isComplete));
+    // ---- listeners de una sola vez, sobre elementos que nunca se recrean ----
+    overlay.addEventListener("click", onDelegatedClick);
 
     let titleTimer;
     overlay.querySelector("#t-title").addEventListener("input", (e) => {
@@ -184,41 +166,17 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
       titleTimer = setTimeout(() => updateTask(task.id, { title: val || "Sin título" }), 500);
     });
 
+    let descTimer;
+    overlay.querySelector("#t-description").addEventListener("input", (e) => {
+      clearTimeout(descTimer);
+      const val = e.target.value;
+      descTimer = setTimeout(() => updateTask(task.id, { description: val }), 600);
+    });
+
     overlay.querySelector("#t-section").addEventListener("change", (e) => updateTask(task.id, { sectionId: e.target.value }));
     overlay.querySelector("#t-start").addEventListener("change", (e) => updateTask(task.id, { startDate: e.target.value || null }));
     overlay.querySelector("#t-due").addEventListener("change", (e) => updateTask(task.id, { dueDate: e.target.value || null }));
 
-    overlay.querySelectorAll("#t-priority .chip").forEach((chip) => {
-      chip.addEventListener("click", () => updateTask(task.id, { priority: chip.dataset.priority }));
-    });
-
-    overlay.querySelectorAll("#t-assignees .chip").forEach((chip) => {
-      chip.addEventListener("click", () => {
-        const u = chip.dataset.uid;
-        const set = new Set(task.assigneeIds);
-        set.has(u) ? set.delete(u) : set.add(u);
-        updateTask(task.id, { assigneeIds: [...set] });
-      });
-    });
-
-    const depEl = overlay.querySelector("#t-depends");
-    if (depEl) {
-      depEl.querySelectorAll(".chip").forEach((chip) => {
-        chip.addEventListener("click", () => {
-          const d = chip.dataset.dep;
-          const set = new Set(task.dependsOn);
-          set.has(d) ? set.delete(d) : set.add(d);
-          updateTask(task.id, { dependsOn: [...set] });
-        });
-      });
-    }
-
-    overlay.querySelectorAll("[data-remove-tag]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        updateTask(task.id, { tags: task.tags.filter((t) => t !== btn.dataset.removeTag) });
-      });
-    });
     overlay.querySelector("#t-new-tag").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -226,13 +184,6 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
         if (val && !task.tags.includes(val)) updateTask(task.id, { tags: [...task.tags, val] });
         e.target.value = "";
       }
-    });
-
-    let descTimer;
-    overlay.querySelector("#t-description").addEventListener("input", (e) => {
-      clearTimeout(descTimer);
-      const val = e.target.value;
-      descTimer = setTimeout(() => updateTask(task.id, { description: val }), 600);
     });
 
     overlay.querySelector("#t-new-subtask").addEventListener("keydown", (e) => {
@@ -246,19 +197,159 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
       }
     });
 
-    overlay.querySelector("#t-file-input").addEventListener("change", handleFileUpload);
+    overlay.querySelector("#t-link-url").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); handleAddLink(); }
+    });
 
-    overlay.querySelector("#t-send-comment").addEventListener("click", sendComment);
     overlay.querySelector("#t-new-comment").addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendComment();
     });
 
-    overlay.querySelector("#t-delete").addEventListener("click", async () => {
-      if (!confirm(`¿Eliminar "${task.title}"? No se puede deshacer.`)) return;
-      await deleteTask(task.id);
-      close(true);
-      onDeleted();
-    });
+    // ---- piezas que sí se regeneran en cada patch, pintadas ahora por primera vez ----
+    renderPriorityChips();
+    renderMilestoneButton();
+    renderAssigneeChips();
+    renderTagChips();
+    renderDependencyChips();
+    renderSubtasks();
+    renderAttachments();
+    renderComments();
+  }
+
+  // --------------------------------------------------------------------
+  // Actualización tras la primera vez: solo toca lo necesario
+  // --------------------------------------------------------------------
+  function patchShell() {
+    const titleInput = overlay.querySelector("#t-title");
+    if (titleInput && document.activeElement !== titleInput && titleInput.value !== task.title) {
+      titleInput.value = task.title;
+    }
+    const descInput = overlay.querySelector("#t-description");
+    if (descInput && document.activeElement !== descInput && descInput.value !== task.description) {
+      descInput.value = task.description;
+    }
+    const sectionSelect = overlay.querySelector("#t-section");
+    if (sectionSelect && document.activeElement !== sectionSelect) sectionSelect.value = task.sectionId;
+    const startInput = overlay.querySelector("#t-start");
+    if (startInput && document.activeElement !== startInput) startInput.value = toDateInputValue(task.startDate);
+    const dueInput = overlay.querySelector("#t-due");
+    if (dueInput && document.activeElement !== dueInput) dueInput.value = toDateInputValue(task.dueDate);
+    if (dueInput) dueInput.style.borderColor = isOverdue(task.dueDate, task.isComplete) ? "var(--color-danger)" : "";
+
+    const completeBtn = overlay.querySelector("#t-complete");
+    if (completeBtn) {
+      completeBtn.classList.toggle("is-checked", task.isComplete);
+      completeBtn.textContent = task.isComplete ? "✓" : "";
+    }
+
+    renderPriorityChips();
+    renderMilestoneButton();
+    renderAssigneeChips();
+    renderTagChips();
+    renderDependencyChips();
+    renderSubtasks();
+    renderAttachments();
+  }
+
+  // --------------------------------------------------------------------
+  // Click delegado: como estas piezas se regeneran, un solo listener sobre
+  // el overlay (que nunca se destruye) evita tener que re-engancharlo cada vez.
+  // --------------------------------------------------------------------
+  function onDelegatedClick(e) {
+    const priorityChip = e.target.closest("#t-priority .chip");
+    if (priorityChip) { updateTask(task.id, { priority: priorityChip.dataset.priority }); return; }
+
+    const milestoneBtn = e.target.closest("#t-milestone");
+    if (milestoneBtn) { updateTask(task.id, { isMilestone: !task.isMilestone }); return; }
+
+    const assigneeChip = e.target.closest("#t-assignees .chip");
+    if (assigneeChip) {
+      const u = assigneeChip.dataset.uid;
+      const set = new Set(task.assigneeIds);
+      set.has(u) ? set.delete(u) : set.add(u);
+      updateTask(task.id, { assigneeIds: [...set] });
+      return;
+    }
+
+    const removeTagBtn = e.target.closest("[data-remove-tag]");
+    if (removeTagBtn) { updateTask(task.id, { tags: task.tags.filter((t) => t !== removeTagBtn.dataset.removeTag) }); return; }
+
+    const depChip = e.target.closest("#t-depends .chip");
+    if (depChip) {
+      const d = depChip.dataset.dep;
+      const set = new Set(task.dependsOn);
+      set.has(d) ? set.delete(d) : set.add(d);
+      updateTask(task.id, { dependsOn: [...set] });
+      return;
+    }
+
+    if (e.target.closest("#t-complete")) { toggleTaskComplete(task.id, !task.isComplete); return; }
+
+    const subCheck = e.target.closest("[data-sub]");
+    if (subCheck) {
+      const subtasks = task.subtasks.map((s) => (s.id === subCheck.dataset.sub ? { ...s, done: !s.done } : s));
+      updateTask(task.id, { subtasks });
+      return;
+    }
+    const subRemove = e.target.closest("[data-remove-sub]");
+    if (subRemove) { updateTask(task.id, { subtasks: task.subtasks.filter((s) => s.id !== subRemove.dataset.removeSub) }); return; }
+
+    const attachRemove = e.target.closest("[data-remove-attach]");
+    if (attachRemove) { updateTask(task.id, { attachments: task.attachments.filter((a) => a.id !== attachRemove.dataset.removeAttach) }); return; }
+
+    if (e.target.closest("#t-add-link")) { handleAddLink(); return; }
+    if (e.target.closest("#t-close")) { close(); return; }
+    if (e.target.closest("#t-send-comment")) { sendComment(); return; }
+    if (e.target.closest("#t-delete")) { handleDelete(); return; }
+  }
+
+  // --------------------------------------------------------------------
+  // Piezas regenerables (sin estado de foco que preservar)
+  // --------------------------------------------------------------------
+  function renderPriorityChips() {
+    const box = overlay.querySelector("#t-priority");
+    box.innerHTML = PRIORITIES.map(
+      (p) => `<button type="button" class="chip${p === task.priority ? " is-selected" : ""}" data-priority="${p}"><span class="chip__dot priority-${p}"></span>${PRIORITY_LABELS[p]}</button>`
+    ).join("");
+  }
+
+  function renderMilestoneButton() {
+    const wrap = overlay.querySelector("#t-milestone-wrap");
+    wrap.innerHTML = `
+      <button type="button" class="chip${task.isMilestone ? " is-selected" : ""}" id="t-milestone" style="width:fit-content;">
+        🚩 ${task.isMilestone ? "Marcada como hito" : "Marcar como hito"}
+      </button>`;
+  }
+
+  function renderAssigneeChips() {
+    const box = overlay.querySelector("#t-assignees");
+    box.innerHTML = teamMembers
+      .map(
+        (m) => `
+      <button type="button" class="chip${task.assigneeIds.includes(m.uid) ? " is-selected" : ""}" data-uid="${m.uid}">
+        <span class="avatar avatar--sm" style="background:${colorFromString(m.uid)}">${initials(m.name)}</span>
+        ${escapeHtml(m.name)}
+      </button>`
+      )
+      .join("");
+  }
+
+  function renderTagChips() {
+    const box = overlay.querySelector("#t-tags");
+    box.innerHTML = task.tags
+      .map((tag) => `<span class="chip is-selected" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)} <span data-remove-tag="${escapeHtml(tag)}" style="cursor:pointer;">✕</span></span>`)
+      .join("");
+  }
+
+  function renderDependencyChips() {
+    const wrap = overlay.querySelector("#t-depends-wrap");
+    const others = allProjectTasks.filter((t) => t.id !== task.id);
+    if (!others.length) { wrap.innerHTML = ""; return; }
+    wrap.innerHTML = `
+      <span class="field__label">Bloqueada por</span>
+      <div class="chip-select" id="t-depends">
+        ${others.map((t) => `<button type="button" class="chip${task.dependsOn.includes(t.id) ? " is-selected" : ""}" data-dep="${t.id}">${t.isComplete ? "✓ " : ""}${escapeHtml(t.title)}</button>`).join("")}
+      </div>`;
   }
 
   function renderSubtasks() {
@@ -277,60 +368,32 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
       </div>`
       )
       .join("");
-    list.querySelectorAll("[data-sub]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const subtasks = task.subtasks.map((s) => (s.id === btn.dataset.sub ? { ...s, done: !s.done } : s));
-        updateTask(task.id, { subtasks });
-      });
-    });
-    list.querySelectorAll("[data-remove-sub]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        updateTask(task.id, { subtasks: task.subtasks.filter((s) => s.id !== btn.dataset.removeSub) });
-      });
-    });
   }
 
   function renderAttachments() {
     const list = overlay.querySelector("#t-attachments");
-    if (!task.attachments.length) {
-      list.innerHTML = "";
-      return;
-    }
+    if (!task.attachments.length) { list.innerHTML = ""; return; }
     list.innerHTML = task.attachments
       .map(
         (a) => `
       <div class="attachment-row">
-        <a href="${a.url}" target="_blank" rel="noopener" class="attachment-row__name">📎 ${escapeHtml(a.name)}</a>
-        <button class="attachment-row__remove" data-remove-attach="${a.path}">✕</button>
+        <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener" class="attachment-row__name">🔗 ${escapeHtml(a.name)}</a>
+        <button class="attachment-row__remove" data-remove-attach="${a.id}">✕</button>
       </div>`
       )
       .join("");
-    list.querySelectorAll("[data-remove-attach]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const path = btn.dataset.removeAttach;
-        try { await deleteObject(storageRef(storage, path)); } catch (e) { /* puede que ya no exista */ }
-        updateTask(task.id, { attachments: task.attachments.filter((a) => a.path !== path) });
-      });
-    });
   }
 
-  async function handleFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { showToast("El archivo supera los 20 MB.", "error"); return; }
-    showToast("Subiendo archivo…");
-    const path = `attachments/${task.id}/${uid()}-${file.name}`;
-    try {
-      const sref = storageRef(storage, path);
-      await uploadBytes(sref, file);
-      const url = await getDownloadURL(sref);
-      await updateTask(task.id, { attachments: [...task.attachments, { name: file.name, url, path }] });
-      showToast("Archivo adjuntado.");
-    } catch (err) {
-      console.error(err);
-      showToast("No se pudo subir el archivo.", "error");
-    }
-    e.target.value = "";
+  function handleAddLink() {
+    const nameInput = overlay.querySelector("#t-link-name");
+    const urlInput = overlay.querySelector("#t-link-url");
+    let url = urlInput.value.trim();
+    if (!url) { urlInput.focus(); return; }
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    const name = nameInput.value.trim() || url.replace(/^https?:\/\//i, "").split("/")[0];
+    updateTask(task.id, { attachments: [...task.attachments, { id: uid(), name, url }] });
+    nameInput.value = "";
+    urlInput.value = "";
   }
 
   function renderComments() {
@@ -363,5 +426,12 @@ export function openTaskModal({ taskId, project, teamMembers, allProjectTasks, c
     if (!text) return;
     textarea.value = "";
     await addComment(task.id, { authorId: currentUserProfile.uid, authorName: currentUserProfile.name, text });
+  }
+
+  async function handleDelete() {
+    if (!confirm(`¿Eliminar "${task.title}"? No se puede deshacer.`)) return;
+    await deleteTask(task.id);
+    close(true);
+    onDeleted();
   }
 }

@@ -19,8 +19,8 @@
   --color-signal-soft: rgba(252, 208, 0, 0.14);
 
   --color-text-hi: #ECEDED;
-  --color-text-lo: #8B959C;
-  --color-text-faint: #565D62;
+  --color-text-lo: #B4BCC2;
+  --color-text-faint: #909AA0;
 
   --color-danger: #FF5C6C;
   --color-danger-soft: rgba(255, 92, 108, 0.14);
@@ -260,6 +260,13 @@ a { color: var(--color-signal); }
 .sidebar__item:hover { background: var(--color-panel-raised); color: var(--color-text-hi); }
 .sidebar__item.is-active { background: var(--color-panel-raised); color: var(--color-text-hi); box-shadow: inset 2px 0 0 var(--color-signal); }
 .sidebar__item-dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
+.sidebar__item-icon { font-size: 13px; flex-shrink: 0; }
+.sidebar__item-count {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-faint);
+  background: var(--color-void); border: 1px solid var(--color-line);
+  border-radius: 20px; padding: 0px 7px;
+}
+.sidebar__item--pinned { margin-bottom: 14px; }
 .sidebar__item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar__new-project {
   margin-top: 8px;
@@ -494,6 +501,57 @@ a { color: var(--color-signal); }
 .section-divider { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .section-divider__label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-text-faint); text-transform: uppercase; white-space: nowrap; }
 .section-divider::after { content: ''; flex: 1; height: 1px; background: var(--color-line); }
+
+/* ==========================================================================
+   Calendar view
+   ========================================================================== */
+.calendar { display: flex; flex-direction: column; gap: 14px; height: 100%; }
+.calendar-header { display: flex; align-items: center; gap: 12px; }
+.calendar-header__label { font-family: var(--font-display); font-size: 15px; font-weight: 600; text-transform: capitalize; min-width: 140px; }
+.calendar-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 1px; background: var(--color-line);
+  border: 1px solid var(--color-line); border-radius: var(--radius-md);
+  overflow: hidden; flex: 1;
+}
+.calendar-weekday {
+  background: var(--color-panel); padding: 8px 0; text-align: center;
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--color-text-faint); text-transform: uppercase;
+}
+.calendar-day {
+  background: var(--color-void-raised); min-height: 100px; padding: 6px;
+  display: flex; flex-direction: column; gap: 3px; position: relative;
+}
+.calendar-day.is-other-month { background: var(--color-void); }
+.calendar-day.is-other-month .calendar-day__number { color: var(--color-text-faint); }
+.calendar-day__number {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--color-text-lo);
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+}
+.calendar-day.is-today .calendar-day__number { background: var(--color-signal); color: var(--color-void); font-weight: 700; }
+.calendar-day__add {
+  margin-left: auto; opacity: 0; background: none; border: none;
+  color: var(--color-text-faint); font-size: 14px; padding: 0 4px; border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
+}
+.calendar-day:hover .calendar-day__add { opacity: 1; }
+.calendar-day__add:hover { color: var(--color-signal); }
+.calendar-task-chip {
+  font-size: 10.5px; padding: 2px 6px; border-radius: 4px;
+  background: var(--color-panel); border-left: 2px solid var(--color-line-bright);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
+.calendar-task-chip:hover { background: var(--color-panel-raised); }
+.calendar-task-chip.is-milestone { border-left-color: var(--color-signal); background: var(--color-signal-soft); font-weight: 600; }
+.calendar-more { font-size: 10px; color: var(--color-text-faint); padding-left: 6px; cursor: pointer; }
+.calendar-more:hover { color: var(--color-text-lo); }
+
+@media (max-width: 860px) {
+  .calendar-day { min-height: 64px; font-size: 11px; }
+  .calendar-task-chip { display: none; }
+}
 
 /* ==========================================================================
    Toasts

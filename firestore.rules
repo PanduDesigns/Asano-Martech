@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ============================================================================
-// Reglas de seguridad de Firestore para Nexus.
+// Reglas de seguridad de Firestore para Asano.
 //
 // Modelo: equipo pequeño y de confianza (6-15 personas) donde TODO el
 // departamento debe ver todos los proyectos y tareas — no hay privacidad
@@ -19,9 +19,11 @@ rules_version = '2';
 //  - projects/{id}: cualquier persona autenticada puede leer, crear y
 //    editar cualquier proyecto. Solo quien lo creó (o un admin) puede
 //    borrarlo.
-//  - tasks/{id}: igual que proyectos — visibles y editables por cualquier
-//    persona autenticada del equipo, borrado reservado a quien la creó o
-//    un admin.
+//  - tasks/{id}: igual que proyectos si tienen projectId (visibles y
+//    editables por cualquier persona autenticada del equipo). Si en cambio
+//    projectId es null, es una tarea PERSONAL (recordatorio privado en
+//    "Mis tareas") y solo la puede ver/editar quien conste como ownerId.
+//    Borrado reservado a quien la creó/es su dueño o a un admin.
 //  - tasks/{id}/comments/{id}: cualquier miembro del equipo puede comentar;
 //    solo el autor o un admin puede editar/borrar un comentario.
 // ============================================================================
@@ -73,18 +75,32 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.createdBy == request.auth.uid || isAdmin());
     }
 
-    // ---- Tareas (visibles para todo el equipo) ----
+    // ---- Tareas (de proyecto: visibles para todo el equipo · personales: solo su dueño/a) ----
     match /tasks/{taskId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn() && (resource.data.createdBy == request.auth.uid || isAdmin());
+      allow read: if isSignedIn() &&
+        (resource.data.projectId != null || resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() &&
+        (request.resource.data.projectId != null || request.resource.data.ownerId == request.auth.uid);
+      allow update: if isSignedIn() &&
+        (resource.data.projectId != null || resource.data.ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid ||
+         resource.data.createdBy == request.auth.uid ||
+         isAdmin() ||
+         (resource.data.projectId != null &&
+          get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.createdBy == request.auth.uid));
 
       match /comments/{commentId} {
         allow read: if isSignedIn();
         allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
         allow update, delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
       }
+    }
+
+    // ---- Etiquetas (vocabulario compartido: nombre + color) ----
+    match /tags/{tagId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
     // ---- Notificaciones (reservado para la fase 2) ----

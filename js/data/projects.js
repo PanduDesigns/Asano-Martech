@@ -8,6 +8,8 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  getDocs,
+  writeBatch,
   query,
   where,
   orderBy,
@@ -48,6 +50,31 @@ export function archiveProject(projectId, archived = true) {
 
 export function deleteProject(projectId) {
   return deleteDoc(doc(db, "projects", projectId));
+}
+
+/**
+ * Borra el proyecto Y todas sus tareas (con sus comentarios). Se hace en
+ * lotes de como mucho 450 operaciones para no chocar con el límite de 500
+ * escrituras por batch de Firestore — de sobra para el tamaño de un
+ * departamento, pero así no revienta si algún proyecto acumula muchas
+ * tareas con muchos comentarios.
+ */
+export async function deleteProjectWithTasks(projectId) {
+  const tasksSnap = await getDocs(query(collection(db, "tasks"), where("projectId", "==", projectId)));
+
+  const deletions = [];
+  for (const taskDoc of tasksSnap.docs) {
+    const commentsSnap = await getDocs(collection(db, "tasks", taskDoc.id, "comments"));
+    commentsSnap.forEach((c) => deletions.push(c.ref));
+    deletions.push(taskDoc.ref);
+  }
+  deletions.push(doc(db, "projects", projectId));
+
+  for (let i = 0; i < deletions.length; i += 450) {
+    const batch = writeBatch(db);
+    deletions.slice(i, i + 450).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
 }
 
 export function addMemberToProject(projectId, uid) {

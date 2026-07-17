@@ -71,6 +71,18 @@ export function colorFromString(str) {
   return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
 }
 
+/** Negro o blanco, el que mejor contraste dé sobre `bgHex` (para etiquetas de color). */
+export function textColorFor(bgHex) {
+  const hex = (bgHex || "").replace("#", "");
+  if (hex.length !== 6) return "#0B0D0E";
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return luminance > 0.42 ? "#0B0D0E" : "#F5F6F6";
+}
+
 export function escapeHtml(str) {
   if (str == null) return "";
   return String(str)

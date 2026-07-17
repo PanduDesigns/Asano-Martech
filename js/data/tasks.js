@@ -1,6 +1,12 @@
 // ============================================================================
 // Acceso a datos: tareas.
 //
+// Tareas personales: si `projectId` es null, es una tarea privada de una
+// sola persona (recordatorio en "Mis tareas"), marcada con `ownerId`. Se
+// guarda en la misma colección para reutilizar toda la lógica de fechas,
+// prioridad, subtareas, etc. — las reglas de Firestore son las que hacen
+// que solo su dueña/o pueda verla.
+//
 // Nota sobre orden: no usamos orderBy() en la consulta de Firestore a
 // propósito, para no depender de un índice compuesto. El orden (por
 // sección/columna y por prioridad) se calcula en el cliente, en las vistas.
@@ -9,6 +15,7 @@ import { db } from "../firebase-init.js";
 import {
   collection,
   doc,
+  getDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -20,8 +27,9 @@ import {
 
 export async function createTask(projectId, data) {
   const ref = await addDoc(collection(db, "tasks"), {
-    projectId,
-    sectionId: data.sectionId,
+    projectId: projectId || null,
+    ownerId: data.ownerId || null,
+    sectionId: data.sectionId || null,
     title: data.title,
     description: data.description || "",
     assigneeIds: data.assigneeIds || [],
@@ -33,7 +41,7 @@ export async function createTask(projectId, data) {
     subtasks: data.subtasks || [],
     attachments: data.attachments || [],
     customFields: data.customFields || {},
-    isComplete: false,
+    isComplete: data.isComplete || false,
     isMilestone: data.isMilestone || false,
     completedAt: null,
     order: data.order ?? Date.now(),
@@ -42,6 +50,27 @@ export async function createTask(projectId, data) {
     updatedAt: serverTimestamp(),
   });
   return ref.id;
+}
+
+/** Copia una tarea existente (sin comentarios, sin marcar como completada). */
+export async function duplicateTask(task) {
+  return createTask(task.projectId, {
+    ownerId: task.ownerId,
+    sectionId: task.sectionId,
+    title: `${task.title} (copia)`,
+    description: task.description,
+    assigneeIds: task.assigneeIds,
+    dueDate: task.dueDate,
+    startDate: task.startDate,
+    priority: task.priority,
+    tags: task.tags,
+    dependsOn: [],
+    subtasks: (task.subtasks || []).map((s) => ({ ...s, done: false })),
+    attachments: task.attachments,
+    isMilestone: task.isMilestone,
+    createdBy: task.createdBy,
+    order: Date.now(),
+  });
 }
 
 export function updateTask(taskId, data) {
@@ -65,6 +94,12 @@ export function moveTask(taskId, sectionId, order) {
   return updateDoc(doc(db, "tasks", taskId), { sectionId, order, updatedAt: serverTimestamp() });
 }
 
+/** Lectura única (no en tiempo real) — usada al abrir el modal para editar. */
+export async function getTask(taskId) {
+  const snap = await getDoc(doc(db, "tasks", taskId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
 export function subscribeToProjectTasks(projectId, callback) {
   const q = query(collection(db, "tasks"), where("projectId", "==", projectId));
   return onSnapshot(
@@ -84,7 +119,11 @@ export function subscribeToTask(taskId, callback) {
   });
 }
 
-/** Todas las tareas asignadas a `uid`, en cualquier proyecto (vista "Mis tareas"). */
+/**
+ * Tareas asignadas a `uid` en cualquier proyecto, MÁS sus tareas
+ * personales (que también llevan su propio uid en assigneeIds) — por eso
+ * un solo listener sirve para toda la vista "Mis tareas".
+ */
 export function subscribeToMyTasks(uid, callback) {
   const q = query(collection(db, "tasks"), where("assigneeIds", "array-contains", uid));
   return onSnapshot(

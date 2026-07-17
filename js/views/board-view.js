@@ -2,8 +2,15 @@
 // Vista de Tablero (Kanban): columnas = secciones, arrastrar y soltar entre
 // columnas y para reordenar dentro de la misma columna.
 // ============================================================================
-import { escapeHtml, formatDate, isOverdue, initials, colorFromString } from "../utils.js";
+import { escapeHtml, formatDate, isOverdue, initials, colorFromString, textColorFor } from "../utils.js";
 import { moveTask } from "../data/tasks.js";
+import { openTaskContextMenu } from "./list-view.js";
+
+function tagPill(name, tagsRegistry) {
+  const found = (tagsRegistry || []).find((t) => t.name.toLowerCase() === name.toLowerCase());
+  const color = found ? found.color : "#8B959C";
+  return `<span class="tag-pill" style="background:${color};color:${textColorFor(color)};">${escapeHtml(name)}</span>`;
+}
 
 const PRIORITY_COLORS = {
   urgente: "var(--color-danger)",
@@ -12,7 +19,7 @@ const PRIORITY_COLORS = {
   baja: "var(--color-text-faint)",
 };
 
-export function renderBoardView(container, { project, tasks, teamMembers, onOpenTask, onAddTask }) {
+export function renderBoardView(container, { project, tasks, teamMembers, tagsRegistry, onOpenTask, onAddTask }) {
   const bySection = new Map(project.sections.map((s) => [s.id, []]));
   tasks.forEach((t) => {
     if (!bySection.has(t.sectionId)) bySection.set(t.sectionId, []);
@@ -31,7 +38,7 @@ export function renderBoardView(container, { project, tasks, teamMembers, onOpen
             <span class="board-col__count">${colTasks.length}</span>
           </div>
           <div class="board-col__body" data-drop-section="${section.id}">
-            ${colTasks.map((task) => cardHtml(task, teamMembers)).join("")}
+            ${colTasks.map((task) => cardHtml(task, teamMembers, tagsRegistry)).join("")}
           </div>
           <button class="board-col__add" data-add-section="${section.id}">+ Tarea</button>
         </div>`;
@@ -41,6 +48,11 @@ export function renderBoardView(container, { project, tasks, teamMembers, onOpen
 
   container.querySelectorAll(".task-card").forEach((card) => {
     card.addEventListener("click", () => onOpenTask(card.dataset.taskId));
+    card.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const task = tasks.find((t) => t.id === card.dataset.taskId);
+      if (task) openTaskContextMenu(e.clientX, e.clientY, task, onOpenTask);
+    });
     card.addEventListener("dragstart", (e) => {
       card.classList.add("is-dragging");
       e.dataTransfer.setData("text/plain", card.dataset.taskId);
@@ -99,13 +111,13 @@ function getDragAfterElement(container, y) {
   ).element;
 }
 
-function cardHtml(task, teamMembers) {
+function cardHtml(task, teamMembers, tagsRegistry) {
   const overdue = isOverdue(task.dueDate, task.isComplete);
   const assignees = task.assigneeIds.map((id) => teamMembers.find((m) => m.uid === id)).filter(Boolean);
   return `
     <div class="task-card" draggable="true" data-task-id="${task.id}" style="border-left-color:${PRIORITY_COLORS[task.priority] || "var(--color-line-bright)"}">
       <div class="task-card__title" style="${task.isComplete ? "text-decoration:line-through;color:var(--color-text-faint);" : ""}">${task.isMilestone ? "🚩 " : ""}${escapeHtml(task.title)}</div>
-      ${task.tags.length ? `<div class="task-card__tags">${task.tags.slice(0, 3).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+      ${task.tags.length ? `<div class="task-card__tags">${task.tags.slice(0, 3).map((t) => tagPill(t, tagsRegistry)).join("")}</div>` : ""}
       <div class="task-card__footer">
         ${task.dueDate ? `<span class="task-card__due${overdue ? " is-overdue" : ""}">${formatDate(task.dueDate)}</span>` : ""}
         <span class="task-card__spacer"></span>

@@ -1,28 +1,25 @@
-# Nexus — Gestor de tareas del equipo
+# Asano — Gestor de tareas del equipo
 
-Gestor de tareas multiusuario con Kanban, lista, calendario con hitos, vista
-personal "Mis tareas", subtareas, dependencias, comentarios y enlaces
-adjuntos. Es un sitio 100% estático (HTML/CSS/JS, sin paso de compilación)
-pensado para vivir en GitHub Pages, con Firebase como base de datos
-compartida en tiempo real.
+Gestor de tareas multiusuario con Kanban, lista, calendario con hitos,
+vista personal "Mis tareas" (con recordatorios privados), etiquetas de
+color, subtareas, dependencias, comentarios y enlaces adjuntos. Sitio
+100% estático (HTML/CSS/JS, sin paso de compilación) pensado para vivir
+en GitHub Pages, con Firebase como base de datos compartida en tiempo real.
 
-Puedes cambiar el nombre "Nexus" por el que prefieras: aparece en
+Puedes cambiar el nombre "Asano" por el que prefieras: aparece en
 `index.html` (título de la pestaña y pantalla de login) y en
 `js/components/sidebar.js`.
 
 **Identidad visual:** los colores (gris pizarra #78848C, antracita #3C3C3C
 y el dorado #FCD000 como acento) y el logotipo salen directamente de los
-archivos de marca de Martech Corporation, en `assets/`. Si el dorado no es
-exactamente el tono que usáis en marketing, es el único valor que habría
-que ajustar — está centralizado en `--color-signal` dentro de
-`css/styles.css`.
+archivos de marca de Martech Corporation, en `assets/`.
 
-**Modelo de acceso:** todo el equipo ve todos los proyectos y tareas — no
-hay proyectos privados entre compañeros. Cualquier persona con cuenta
-puede crear proyectos, crear/editar tareas y asignárselas a quien quiera;
-solo borrar un proyecto o tarea queda limitado a quien lo creó o a un
-admin. Es el modelo pensado para un departamento pequeño donde todos
-necesitan verse el trabajo entre sí.
+**Modelo de acceso:** todo el equipo ve todos los proyectos y tareas de
+proyecto — no hay privacidad entre compañeros ahí. La única excepción son
+las tareas **personales** de "Mis tareas" (recordatorios propios sin
+proyecto), que solo ve quien las creó. Cualquiera puede crear proyectos y
+tareas; borrar un proyecto (y sus tareas) o una tarea de otra persona está
+limitado a quien lo creó o a un admin.
 
 ---
 
@@ -30,102 +27,97 @@ necesitan verse el trabajo entre sí.
 
 ### 1.1 Crear el proyecto de Firebase
 1. Ve a [console.firebase.google.com](https://console.firebase.google.com) y pulsa **Crear proyecto**.
-2. Dale un nombre y termina el asistente. El plan gratuito **Spark** es suficiente para un equipo de 6-15 personas — no hace falta dar tarjeta ni pasar a Blaze para nada de lo que usa esta app.
+2. El plan gratuito **Spark** es suficiente — no hace falta pasar a Blaze para nada de lo que usa esta app (los adjuntos son enlaces, no subidas de archivo).
 
 ### 1.2 Activar Authentication
-1. En el menú lateral: **Compilación → Authentication → Comenzar**.
-2. En la pestaña **Sign-in method**, activa **Correo electrónico/contraseña**.
+**Compilación → Authentication → Comenzar** → pestaña **Sign-in method** → activa **Correo electrónico/contraseña**.
 
 ### 1.3 Activar Firestore Database
-1. **Compilación → Firestore Database → Crear base de datos**.
-2. Elige una ubicación (por ejemplo `eur3 (europe-west)` si tu equipo está en España/Europa) y empieza en **modo producción** (ya tenemos reglas propias, ver 1.5).
-
-No hace falta activar **Storage**: los archivos adjuntos de las tareas son enlaces (a Drive, OneDrive, un servidor propio, etc.), no subidas de archivo, precisamente para no depender del plan de pago **Blaze** que Firebase exige para Storage.
+**Compilación → Firestore Database → Crear base de datos** → modo producción (ya tenemos reglas propias).
 
 ### 1.4 Registrar la app web y copiar la configuración
-1. En la página principal del proyecto (icono ⚙️ → **Configuración del proyecto**), baja hasta "Tus apps" y pulsa el icono **</>** (Web).
-2. Ponle un apodo y **no** marques Firebase Hosting (usamos GitHub Pages).
-3. Copia el objeto `firebaseConfig` que te muestra y pégalo en [`js/firebase-config.js`](js/firebase-config.js).
-
-Estos valores no son secretos — están pensados para ir en código público, así que no pasa nada por subirlos a GitHub. Lo que de verdad protege los datos son las reglas de seguridad del siguiente paso.
+⚙️ **Configuración del proyecto** → "Tus apps" → icono **</>** (Web) → copia `firebaseConfig` en [`js/firebase-config.js`](js/firebase-config.js). No son datos secretos, puedes subirlos a GitHub sin problema.
 
 ### 1.5 Publicar las reglas de seguridad
 **Firestore Database → Reglas** → pega el contenido de [`firestore.rules`](firestore.rules) → **Publicar**.
 
-Cada vez que te pase una versión nueva de este proyecto y el archivo `firestore.rules` haya cambiado, hay que repetir este paso — copiar el archivo no actualiza las reglas ya publicadas en tu proyecto de Firebase, solo lo hace pegarlas de nuevo en la consola.
-
-(Si en el futuro prefieres el CLI de Firebase: `firebase deploy --only firestore:rules`.)
+Cada vez que este archivo cambie entre una versión y otra del proyecto, hay que repetir este paso — subir el archivo nuevo no actualiza lo ya publicado en tu proyecto de Firebase, solo pegarlo de nuevo en la consola lo hace.
 
 ### 1.6 Probar en local
-Los navegadores bloquean algunas cosas de Firebase Auth si abres `index.html` haciendo doble clic (protocolo `file://`). Levanta un servidor local sencillo desde la carpeta del proyecto:
-
 ```bash
-# Python (ya viene instalado en Mac/Linux)
 python3 -m http.server 8000
-
-# o con Node
-npx serve .
 ```
-
-Y abre `http://localhost:8000`.
+Y abre `http://localhost:8000` (Firebase Auth necesita `http://`, no sirve abrir el archivo con doble clic).
 
 ### 1.7 Subir a GitHub y activar GitHub Pages
-1. Crea un repositorio nuevo (puede ser público: el código de la app no expone datos, solo Firebase con sus propias reglas los protege).
-2. Sube el contenido de esta carpeta a la raíz del repo.
-3. **Settings → Pages → Source: Deploy from a branch → main /(root)**.
-4. En un par de minutos tendrás la URL pública (algo como `https://tu-usuario.github.io/tu-repo/`).
+Sube el contenido de esta carpeta a un repositorio y activa **Settings → Pages → Deploy from a branch → main /(root)**.
 
 ---
 
 ## 2. Primer uso
 
-La **primera persona que se registre** desde la pantalla de "Crear cuenta" se convierte automáticamente en **administradora** del equipo (lo gestiona `meta/bootstrap`, ver `firestore.rules`). El resto de compañeros que se registren después quedarán como **miembro**. Un admin puede ascender a otra persona editando manualmente su documento en `users/{uid}` desde la consola de Firebase (cambiar `role` a `"admin"`) mientras construimos una pantalla para hacerlo desde la app.
+La **primera persona que se registre** se convierte automáticamente en **administradora**. El resto queda como **miembro**. Un admin puede ascender a otra persona editando su documento en `users/{uid}` desde la consola de Firebase (`role` → `"admin"`).
 
-### Restringir quién puede registrarse (recomendado para uso real)
-Por defecto, cualquiera con el enlace puede crear una cuenta. Para limitarlo a los correos de tu empresa:
-1. Firestore Database → colección `meta` → documento `config` (créalo si no existe).
-2. Añade el campo `allowedEmailDomains` como **array** con tu dominio, p. ej. `["martechcorp.com"]`.
+Para restringir quién puede registrarse a los correos de tu empresa: Firestore → colección `meta` → documento `config` → campo `allowedEmailDomains` (array), p. ej. `["martechcorp.com"]`.
 
 ---
 
-## 3. Estructura del proyecto
+## 3. Cómo funciona lo nuevo de esta versión
+
+### Una sola ventana para crear y editar tareas
+Se ve todo el formulario de golpe (fechas, prioridad, responsables, etiquetas, subtareas, adjuntos…) tanto al crear como al editar, y **nada se guarda hasta pulsar "Aceptar"**. Si cierras sin aceptar habiendo cambiado algo, pregunta si quieres descartarlo. Los comentarios son la única excepción: se envían al momento en cuanto pulsas "Enviar", y solo están disponibles editando una tarea ya guardada (una tarea nueva todavía no tiene dónde colgarlos).
+
+### Clic derecho para más acciones
+Clic derecho sobre una tarea (en Lista, Tablero o Mis tareas): marcar completada, duplicar, convertir en hito, abrir detalles o eliminar. Clic derecho sobre un proyecto en la barra lateral: renombrar o eliminar (esto último borra también todas sus tareas y comentarios).
+
+### Etiquetas de color
+Al escribir una etiqueta en una tarea, se sugieren las que ya existen (con su color) para reutilizarlas; si escribes una nueva, puedes elegirle color desde una paleta, y se queda seleccionado ese mismo color por defecto para la siguiente etiqueta nueva que crees. El color de una etiqueta es compartido: cambiarlo afecta a todas las tareas que la llevan.
+
+### Mis tareas: recordatorios personales
+El botón "+ Tarea personal" en "Mis tareas" crea una tarea que **solo tú puedes ver** (sin proyecto, sin responsables) — para apuntes y recordatorios propios. Se distinguen con la etiqueta "🔒 Personal".
+
+---
+
+## 4. Estructura del proyecto
 
 ```
 index.html                 Pantalla de login/registro + estructura de la app
-css/styles.css              Todo el diseño (identidad Martech: gris/antracita/dorado)
+css/styles.css              Todo el diseño
 assets/                     Logo e íconos de Martech Corporation
 js/
   firebase-config.js        ← AQUÍ pegas tu configuración de Firebase
   firebase-init.js           Inicializa Firebase (auth, db)
   auth.js                    Registro / inicio de sesión / roles
-  utils.js                   Fechas, avatares, notificaciones, helpers
+  utils.js                   Fechas, avatares, contraste de color, helpers
   data/
-    projects.js               CRUD de proyectos
-    tasks.js                   CRUD de tareas (incluye "mis tareas" entre proyectos)
-    comments.js                 Comentarios de una tarea
+    projects.js               CRUD de proyectos (incluye borrado en cascada)
+    tasks.js                   CRUD de tareas (proyecto y personales)
+    tags.js                     Registro compartido de etiquetas (nombre + color)
+    comments.js                  Comentarios de una tarea
   components/
-    sidebar.js                  Proyectos + Mis tareas + usuario
+    sidebar.js                  Proyectos + Mis tareas + usuario (clic derecho)
     topbar.js                    Selector de vista + nueva tarea
     project-modal.js             Crear proyecto
-    quick-add-task-modal.js       Alta rápida de tarea (título + sección + botón Añadir)
-    task-modal.js                 Panel completo de una tarea
+    task-modal.js                 Formulario único de tarea (crear/editar)
+    context-menu.js               Menú contextual reutilizable (clic derecho)
   views/
-    list-view.js                  Vista de Lista
+    list-view.js                  Vista de Lista (+ menú contextual de tarea)
     board-view.js                  Vista de Tablero (Kanban con drag & drop)
     calendar-view.js                Vista de Calendario (con hitos)
-    my-tasks-view.js                 Vista "Mis tareas" (todas tus tareas, cualquier proyecto)
+    my-tasks-view.js                 "Mis tareas" (de proyecto + personales)
   app.js                     Conecta todo: sesión, estado, enrutado simple
 firestore.rules             Reglas de seguridad de Firestore
 ```
 
-## 4. Modelo de datos (Firestore)
+## 5. Modelo de datos (Firestore)
 
 - **`users/{uid}`** — `name`, `email`, `role` (`admin` | `miembro`)
-- **`projects/{id}`** — `name`, `description`, `color`, `sections[]` (columnas del tablero), `memberIds[]` (informativo), `createdBy`
-- **`tasks/{id}`** — `projectId`, `sectionId`, `title`, `description`, `assigneeIds[]`, `startDate`, `dueDate`, `priority`, `tags[]`, `dependsOn[]` (bloqueada por), `subtasks[]`, `attachments[]` (`{id,name,url}`), `isComplete`, `isMilestone`, `order`
+- **`projects/{id}`** — `name`, `description`, `color`, `sections[]`, `memberIds[]` (informativo), `createdBy`
+- **`tasks/{id}`** — `projectId` (null si es personal), `ownerId` (solo tareas personales), `sectionId`, `title`, `description`, `assigneeIds[]`, `startDate`, `dueDate`, `priority`, `tags[]` (nombres; el color vive en `tags/`), `dependsOn[]`, `subtasks[]`, `attachments[]` (`{id,name,url}`), `isComplete`, `isMilestone`, `order`
 - **`tasks/{id}/comments/{id}`** — `authorId`, `authorName`, `text`
+- **`tags/{slug}`** — `name`, `color`
 
-## 5. Qué falta (próxima iteración)
+## 6. Qué falta (próxima iteración)
 
 - Línea de tiempo/Gantt
 - Filtros avanzados, vistas guardadas y búsqueda global
@@ -133,10 +125,11 @@ firestore.rules             Reglas de seguridad de Firestore
 - Panel con métricas (completadas, vencidas, carga por persona)
 - Campos personalizados (el dato ya existe en el modelo, falta la interfaz)
 - Automatizaciones, formularios de solicitud, revisión de archivos, metas/OKRs, integraciones
-- Pantalla de administración de equipo (ascender/quitar personas, gestionar `allowedEmailDomains` desde la interfaz, gestionar miembros por proyecto si en algún momento hiciera falta volver a un modelo con proyectos privados)
+- Pantalla de administración de equipo
 
-## 6. Limitaciones conocidas de esta primera versión
+## 7. Limitaciones conocidas
 
 - La primera vez que Firestore ejecute algunas consultas puede mostrarte en la consola un enlace para crear un índice compuesto — es normal, solo hay que pulsarlo una vez.
-- El orden de tareas al arrastrar en el tablero usa valores numéricos intermedios; tras miles de reordenaciones en la misma columna convendría "renormalizar" los números (no es un problema a la escala de un departamento).
-- Al abrir una tarea desde "Mis tareas" que pertenece a un proyecto distinto al que tienes seleccionado, el selector de "bloqueada por" solo lista las tareas de ese proyecto que también tienes asignadas a ti, no todas — es una limitación menor de esta iteración, no de las reglas de acceso.
+- El orden de tareas al arrastrar en el tablero usa valores numéricos intermedios; a gran escala convendría "renormalizar" los números de vez en cuando (no es un problema al tamaño de un departamento).
+- Al abrir una tarea desde "Mis tareas" que pertenece a un proyecto distinto al que tienes seleccionado, el selector de "bloqueada por" solo lista las tareas de ese proyecto que también tienes asignadas a ti, no todas.
+- Renombrar un proyecto usa el cuadro de diálogo nativo del navegador (`prompt`), no un formulario propio — funcional pero sencillo; se puede pulir más adelante.

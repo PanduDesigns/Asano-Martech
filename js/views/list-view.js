@@ -1,10 +1,17 @@
 // ============================================================================
 // Vista de Lista: tareas agrupadas por sección, en filas.
 // ============================================================================
-import { escapeHtml, formatDate, isOverdue, initials, colorFromString, sortByPriority } from "../utils.js";
-import { toggleTaskComplete } from "../data/tasks.js";
+import { escapeHtml, formatDate, isOverdue, initials, colorFromString, sortByPriority, textColorFor, showToast } from "../utils.js";
+import { toggleTaskComplete, duplicateTask, updateTask, deleteTask } from "../data/tasks.js";
+import { openContextMenu } from "../components/context-menu.js";
 
-export function renderListView(container, { project, tasks, teamMembers, onOpenTask, onAddTask }) {
+function tagPill(name, tagsRegistry) {
+  const found = (tagsRegistry || []).find((t) => t.name.toLowerCase() === name.toLowerCase());
+  const color = found ? found.color : "#8B959C";
+  return `<span class="tag-pill" style="background:${color};color:${textColorFor(color)};">${escapeHtml(name)}</span>`;
+}
+
+export function renderListView(container, { project, tasks, teamMembers, tagsRegistry, onOpenTask, onAddTask }) {
   const bySection = new Map(project.sections.map((s) => [s.id, []]));
   tasks.forEach((t) => {
     if (!bySection.has(t.sectionId)) bySection.set(t.sectionId, []);
@@ -33,7 +40,7 @@ export function renderListView(container, { project, tasks, teamMembers, onOpenT
           <button class="task-row__check${task.isComplete ? " is-checked" : ""}" data-check="${task.id}">${task.isComplete ? "✓" : ""}</button>
           <span class="task-row__title" data-open="${task.id}">${task.isMilestone ? "🚩 " : ""}${escapeHtml(task.title)}</span>
           <div class="task-row__meta">
-            ${task.tags.slice(0, 2).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}
+            ${task.tags.slice(0, 2).map((t) => tagPill(t, tagsRegistry)).join("")}
             ${task.subtasks.length ? `<span class="task-card__subtasks">${task.subtasks.filter((s) => s.done).length}/${task.subtasks.length}</span>` : ""}
             ${task.dueDate ? `<span class="task-row__due${overdue ? " is-overdue" : ""}">${formatDate(task.dueDate)}</span>` : ""}
             <div class="avatar-stack">
@@ -68,5 +75,28 @@ export function renderListView(container, { project, tasks, teamMembers, onOpenT
   });
   container.querySelectorAll("[data-add-section]").forEach((btn) => {
     btn.addEventListener("click", () => onAddTask(btn.dataset.addSection));
+  });
+  container.querySelectorAll(".task-row").forEach((row) => {
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const task = tasks.find((t) => t.id === row.dataset.taskId);
+      if (task) openTaskContextMenu(e.clientX, e.clientY, task, onOpenTask);
+    });
+  });
+}
+
+export function openTaskContextMenu(x, y, task, onOpenTask) {
+  openContextMenu({
+    x, y,
+    items: [
+      { label: task.isComplete ? "Marcar como pendiente" : "Marcar como completada", icon: "✓", onClick: () => toggleTaskComplete(task.id, !task.isComplete) },
+      { label: "Duplicar tarea", icon: "⧉", onClick: async () => { await duplicateTask(task); showToast("Tarea duplicada."); } },
+      { label: task.isMilestone ? "Quitar de hitos" : "Convertir en hito", icon: "🚩", onClick: () => updateTask(task.id, { isMilestone: !task.isMilestone }) },
+      { label: "Abrir detalles", icon: "↗", onClick: () => onOpenTask(task.id) },
+      { divider: true },
+      { label: "Eliminar tarea", icon: "🗑", danger: true, onClick: () => {
+        if (confirm(`¿Eliminar "${task.title}"? No se puede deshacer.`)) { deleteTask(task.id); showToast("Tarea eliminada."); }
+      } },
+    ],
   });
 }

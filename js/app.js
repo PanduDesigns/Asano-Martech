@@ -4,7 +4,8 @@
 // ============================================================================
 import { onAuthChange, signUp, logIn, logOut } from "./auth.js";
 import { createProject, subscribeToAllProjects, subscribeToProject, subscribeToAllUsers } from "./data/projects.js";
-import { createTask, subscribeToProjectTasks, subscribeToMyTasks } from "./data/tasks.js";
+import { subscribeToProjectTasks, subscribeToMyTasks } from "./data/tasks.js";
+import { subscribeToAllTags } from "./data/tags.js";
 import { renderSidebar } from "./components/sidebar.js";
 import { renderTopbar } from "./components/topbar.js";
 import { renderListView } from "./views/list-view.js";
@@ -13,7 +14,6 @@ import { renderCalendarView } from "./views/calendar-view.js";
 import { renderMyTasksView } from "./views/my-tasks-view.js";
 import { openProjectModal } from "./components/project-modal.js";
 import { openTaskModal } from "./components/task-modal.js";
-import { openQuickAddTaskModal } from "./components/quick-add-task-modal.js";
 import { showToast } from "./utils.js";
 
 const authScreen = document.getElementById("auth-screen");
@@ -27,6 +27,7 @@ let currentUser = null;
 let projects = [];
 let teamMembers = [];
 let myTasks = [];
+let tagsRegistry = [];
 let currentProjectId = null;
 let currentProject = null;
 let currentTasks = [];
@@ -37,6 +38,7 @@ let calendarViewDate = new Date();
 let unsubProjects = null;
 let unsubUsers = null;
 let unsubMyTasks = null;
+let unsubTags = null;
 let unsubCurrentProject = null;
 let unsubCurrentTasks = null;
 
@@ -55,15 +57,18 @@ onAuthChange((profile) => {
 });
 
 function cleanup() {
-  [unsubProjects, unsubUsers, unsubMyTasks, unsubCurrentProject, unsubCurrentTasks].forEach((fn) => fn && fn());
-  unsubProjects = unsubUsers = unsubMyTasks = unsubCurrentProject = unsubCurrentTasks = null;
-  projects = []; teamMembers = []; myTasks = [];
+  [unsubProjects, unsubUsers, unsubMyTasks, unsubTags, unsubCurrentProject, unsubCurrentTasks].forEach((fn) => fn && fn());
+  unsubProjects = unsubUsers = unsubMyTasks = unsubTags = unsubCurrentProject = unsubCurrentTasks = null;
+  projects = []; teamMembers = []; myTasks = []; tagsRegistry = [];
   currentProjectId = null; currentProject = null; currentTasks = []; mode = "project";
 }
 
 function bootstrap() {
   if (unsubUsers) unsubUsers();
   unsubUsers = subscribeToAllUsers((users) => { teamMembers = users; renderShell(); });
+
+  if (unsubTags) unsubTags();
+  unsubTags = subscribeToAllTags((tags) => { tagsRegistry = tags; renderShell(); });
 
   if (unsubMyTasks) unsubMyTasks();
   unsubMyTasks = subscribeToMyTasks(currentUser.uid, (tasks) => { myTasks = tasks; renderShell(); });
@@ -128,8 +133,10 @@ function renderShell() {
       <div>
         <span class="topbar__title">Mis tareas</span>
         <span class="topbar__count">${myTasks.length} ${myTasks.length === 1 ? "tarea" : "tareas"}</span>
-      </div>`;
-    renderMyTasksView(mainContentEl, { tasks: myTasks, teamMembers, projects, onOpenTask: openTask });
+      </div>
+      <button class="btn btn--primary btn--sm" id="btn-new-personal-task" style="margin-left:auto;">+ Tarea personal</button>`;
+    topbarEl.querySelector("#btn-new-personal-task").addEventListener("click", openNewPersonalTask);
+    renderMyTasksView(mainContentEl, { tasks: myTasks, teamMembers, projects, tagsRegistry, onOpenTask: openTask });
     return;
   }
 
@@ -149,7 +156,7 @@ function renderShell() {
     taskCount: currentTasks.length,
     currentView,
     onViewChange: (v) => { currentView = v; renderMain(); },
-    onNewTask: () => openQuickAdd(currentProject.sections[0]?.id),
+    onNewTask: () => openNewProjectTask(currentProject.sections[0]?.id),
     onToggleSidebar: () => sidebarEl.classList.toggle("is-open"),
   });
 
@@ -159,63 +166,72 @@ function renderShell() {
 function renderMain() {
   if (mode !== "project" || !currentProject) return;
   if (currentView === "board") {
-    renderBoardView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, onOpenTask: openTask, onAddTask: openQuickAdd });
+    renderBoardView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
   } else if (currentView === "calendar") {
     renderCalendarView(mainContentEl, {
       tasks: currentTasks,
       viewDate: calendarViewDate,
       onOpenTask: openTask,
-      onAddTaskOnDate: (dateKey) => openQuickAdd(currentProject.sections[0]?.id, dateKey),
+      onAddTaskOnDate: (dateKey) => openNewProjectTask(currentProject.sections[0]?.id, dateKey),
       onMonthChange: (d) => { calendarViewDate = d; renderMain(); },
     });
   } else {
-    renderListView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, onOpenTask: openTask, onAddTask: openQuickAdd });
+    renderListView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
   }
 }
 
-function openQuickAdd(sectionId, presetDueDate) {
+function openNewProjectTask(sectionId, presetDueDate) {
   if (!currentProject) return;
-  openQuickAddTaskModal({
+  openTaskModal({
+    taskId: null,
     project: currentProject,
+    isPersonal: false,
     defaultSectionId: sectionId,
     presetDueDate,
-    onCreate: async ({ title, sectionId: chosenSection, dueDate }) => {
-      try {
-        await createTask(currentProject.id, {
-          sectionId: chosenSection,
-          title,
-          dueDate: dueDate || null,
-          createdBy: currentUser.uid,
-          order: Date.now(),
-        });
-      } catch (e) {
-        console.error(e);
-        showToast("No se pudo crear la tarea.", "error");
-      }
-    },
+    teamMembers,
+    allProjectTasks: currentTasks,
+    tagsRegistry,
+    currentUserProfile: currentUser,
+    onSaved: () => showToast("Tarea creada."),
+    onClosed: () => {},
+  });
+}
+
+function openNewPersonalTask() {
+  openTaskModal({
+    taskId: null,
+    isPersonal: true,
+    teamMembers,
+    allProjectTasks: [],
+    tagsRegistry,
+    currentUserProfile: currentUser,
+    onSaved: () => showToast("Recordatorio creado."),
+    onClosed: () => {},
   });
 }
 
 function openTask(taskId) {
   // La tarea puede venir de "Mis tareas" (de un proyecto distinto al
-  // actualmente seleccionado), así que buscamos su proyecto real entre los
-  // que ya tenemos cargados para poder mostrar sus secciones. El listado de
-  // "bloqueada por" se limita a las tareas de ese proyecto que ya tenemos
-  // en memoria (todas, si estás dentro del proyecto; solo las tuyas, si
-  // abres la tarea desde "Mis tareas").
+  // seleccionado, o ser un recordatorio personal sin proyecto), así que
+  // buscamos su contexto real entre lo que ya tenemos cargado.
   const pool = mode === "mytasks" ? myTasks : currentTasks;
   const task = pool.find((t) => t.id === taskId);
-  const taskProject = (task && projects.find((p) => p.id === task.projectId)) || currentProject;
-  const relatedTasks = pool.filter((t) => t.projectId === taskProject?.id);
+  const isPersonal = task ? !task.projectId : false;
+  const taskProject = !isPersonal
+    ? (task && projects.find((p) => p.id === task.projectId)) || currentProject
+    : null;
+  const relatedTasks = taskProject ? pool.filter((t) => t.projectId === taskProject.id) : [];
 
   openTaskModal({
     taskId,
     project: taskProject,
+    isPersonal,
     teamMembers,
     allProjectTasks: relatedTasks,
+    tagsRegistry,
     currentUserProfile: currentUser,
+    onSaved: () => {},
     onClosed: () => {},
-    onDeleted: () => showToast("Tarea eliminada."),
   });
 }
 

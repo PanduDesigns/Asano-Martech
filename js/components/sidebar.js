@@ -2,6 +2,8 @@
 // Sidebar: lista de proyectos, botón de crear proyecto, pie con el usuario.
 // ============================================================================
 import { initials, colorFromString, escapeHtml } from "../utils.js";
+import { openContextMenu } from "./context-menu.js";
+import { updateProject, deleteProjectWithTasks } from "../data/projects.js";
 
 export function renderSidebar(container, { projects, currentProjectId, isMyTasksActive, myTasksCount, userProfile, onSelectProject, onSelectMyTasks, onCreateProject, onLogout }) {
   const items = projects.map((p) => `
@@ -17,7 +19,7 @@ export function renderSidebar(container, { projects, currentProjectId, isMyTasks
     </div>
     <div class="sidebar__brand-product">
       <span class="sidebar__brand-dot"></span>
-      <span class="sidebar__brand-name">NEXUS</span>
+      <span class="sidebar__brand-name">ASANO</span>
     </div>
 
     <button class="sidebar__item sidebar__item--pinned${isMyTasksActive ? " is-active" : ""}" id="btn-my-tasks">
@@ -44,6 +46,26 @@ export function renderSidebar(container, { projects, currentProjectId, isMyTasks
 
   container.querySelectorAll(".sidebar__item[data-project-id]").forEach((btn) => {
     btn.addEventListener("click", () => onSelectProject(btn.dataset.projectId));
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const project = projects.find((p) => p.id === btn.dataset.projectId);
+      if (!project) return;
+      openContextMenu({
+        x: e.clientX, y: e.clientY,
+        items: [
+          { label: "Renombrar proyecto", icon: "✎", onClick: () => {
+            const name = prompt("Nuevo nombre del proyecto:", project.name);
+            if (name && name.trim()) updateProject(project.id, { name: name.trim() });
+          } },
+          { divider: true },
+          { label: "Eliminar proyecto", icon: "🗑", danger: true, onClick: async () => {
+            if (confirm(`¿Eliminar "${project.name}" y TODAS sus tareas? No se puede deshacer.`)) {
+              await deleteProjectWithTasks(project.id);
+            }
+          } },
+        ],
+      });
+    });
   });
   container.querySelector("#btn-my-tasks").addEventListener("click", onSelectMyTasks);
   container.querySelector("#btn-new-project").addEventListener("click", onCreateProject);

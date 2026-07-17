@@ -2,9 +2,16 @@
 // Vista "Mis tareas": todo lo asignado a la persona, en cualquier proyecto,
 // agrupado por urgencia de fecha (como la vista personal de Asana).
 // ============================================================================
-import { escapeHtml, formatDate, isOverdue, toDate, initials, colorFromString, sortByPriority } from "../utils.js";
+import { escapeHtml, formatDate, isOverdue, toDate, initials, colorFromString, sortByPriority, textColorFor } from "../utils.js";
+import { openTaskContextMenu } from "./list-view.js";
 
-export function renderMyTasksView(container, { tasks, teamMembers, projects, onOpenTask }) {
+function tagPill(name, tagsRegistry) {
+  const found = (tagsRegistry || []).find((t) => t.name.toLowerCase() === name.toLowerCase());
+  const color = found ? found.color : "#8B959C";
+  return `<span class="tag-pill" style="background:${color};color:${textColorFor(color)};">${escapeHtml(name)}</span>`;
+}
+
+export function renderMyTasksView(container, { tasks, teamMembers, projects, tagsRegistry, onOpenTask }) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const weekLimit = new Date(todayStart);
@@ -67,7 +74,8 @@ export function renderMyTasksView(container, { tasks, teamMembers, projects, onO
           <span class="task-row__priority priority-${task.priority}${task.priority === "urgente" && !task.isComplete ? " is-pulse" : ""}"></span>
           <span class="task-row__title" data-open="${task.id}">${task.isMilestone ? "🚩 " : ""}${escapeHtml(task.title)}</span>
           <div class="task-row__meta">
-            ${project ? `<span class="tag" style="border-color:${project.color};color:${project.color};">${escapeHtml(project.name)}</span>` : ""}
+            ${task.tags.slice(0, 2).map((t) => tagPill(t, tagsRegistry)).join("")}
+            ${!task.projectId ? `<span class="tag" style="color:var(--color-signal);border-color:var(--color-signal-dim);">🔒 Personal</span>` : project ? `<span class="tag" style="border-color:${project.color};color:${project.color};">${escapeHtml(project.name)}</span>` : ""}
             ${task.dueDate ? `<span class="task-row__due${overdue ? " is-overdue" : ""}">${formatDate(task.dueDate)}</span>` : ""}
             <div class="avatar-stack">
               ${assignees.map((m) => `<span class="avatar avatar--sm" style="background:${colorFromString(m.uid)}" title="${escapeHtml(m.name)}">${initials(m.name)}</span>`).join("")}
@@ -90,5 +98,12 @@ export function renderMyTasksView(container, { tasks, teamMembers, projects, onO
 
   container.querySelectorAll("[data-open]").forEach((elx) => {
     elx.addEventListener("click", () => onOpenTask(elx.dataset.open));
+  });
+  container.querySelectorAll(".task-row").forEach((row) => {
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const task = tasks.find((t) => t.id === row.dataset.taskId);
+      if (task) openTaskContextMenu(e.clientX, e.clientY, task, onOpenTask);
+    });
   });
 }

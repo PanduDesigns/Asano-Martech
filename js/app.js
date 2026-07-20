@@ -11,6 +11,7 @@ import { renderTopbar } from "./components/topbar.js";
 import { renderListView } from "./views/list-view.js";
 import { renderBoardView } from "./views/board-view.js";
 import { renderCalendarView } from "./views/calendar-view.js";
+import { renderTimelineView } from "./views/timeline-view.js";
 import { renderMyTasksView } from "./views/my-tasks-view.js";
 import { openProjectModal } from "./components/project-modal.js";
 import { openTaskModal } from "./components/task-modal.js";
@@ -32,8 +33,10 @@ let currentProjectId = null;
 let currentProject = null;
 let currentTasks = [];
 let currentView = "list";
-let mode = "project"; // 'project' | 'mytasks'
+let mode = "project"; // 'project' | 'mytasks' | 'timeline'
 let calendarViewDate = new Date();
+let globalTasksByProject = {}; // { [projectId]: tasks[] } — para la línea de tiempo global
+let unsubGlobalTasks = {}; // { [projectId]: unsubscribeFn }
 
 let unsubProjects = null;
 let unsubUsers = null;
@@ -58,7 +61,9 @@ onAuthChange((profile) => {
 
 function cleanup() {
   [unsubProjects, unsubUsers, unsubMyTasks, unsubTags, unsubCurrentProject, unsubCurrentTasks].forEach((fn) => fn && fn());
+  Object.values(unsubGlobalTasks).forEach((fn) => fn && fn());
   unsubProjects = unsubUsers = unsubMyTasks = unsubTags = unsubCurrentProject = unsubCurrentTasks = null;
+  unsubGlobalTasks = {}; globalTasksByProject = {};
   projects = []; teamMembers = []; myTasks = []; tagsRegistry = [];
   currentProjectId = null; currentProject = null; currentTasks = []; mode = "project";
 }
@@ -76,6 +81,7 @@ function bootstrap() {
   if (unsubProjects) unsubProjects();
   unsubProjects = subscribeToAllProjects((allProjects) => {
     projects = allProjects;
+    syncGlobalTimelineSubscriptions();
     if (mode === "project") {
       if (!currentProjectId && projects.length) {
         selectProject(projects[0].id);
@@ -86,6 +92,34 @@ function bootstrap() {
       }
     }
     renderShell();
+  });
+}
+
+/**
+ * La línea de tiempo global necesita las tareas de TODOS los proyectos a
+ * la vez. En vez de una consulta sin filtro (que las reglas de seguridad
+ * rechazarían, porque no pueden garantizar de antemano que todo lo que
+ * devuelva sea legible), mantenemos un listener por proyecto — a la
+ * escala de un departamento no supone ningún problema, y así reutilizamos
+ * exactamente las mismas reglas que ya funcionan para la vista de un solo
+ * proyecto.
+ */
+function syncGlobalTimelineSubscriptions() {
+  const currentIds = new Set(projects.map((p) => p.id));
+  Object.keys(unsubGlobalTasks).forEach((id) => {
+    if (!currentIds.has(id)) {
+      unsubGlobalTasks[id]();
+      delete unsubGlobalTasks[id];
+      delete globalTasksByProject[id];
+    }
+  });
+  projects.forEach((p) => {
+    if (!unsubGlobalTasks[p.id]) {
+      unsubGlobalTasks[p.id] = subscribeToProjectTasks(p.id, (tasks) => {
+        globalTasksByProject[p.id] = tasks;
+        if (mode === "timeline") renderShell();
+      });
+    }
   });
 }
 
@@ -106,6 +140,11 @@ function selectMyTasks() {
   renderShell();
 }
 
+function selectTimeline() {
+  mode = "timeline";
+  renderShell();
+}
+
 function renderShell() {
   if (!currentUser) return;
 
@@ -113,10 +152,12 @@ function renderShell() {
     projects,
     currentProjectId: mode === "project" ? currentProjectId : null,
     isMyTasksActive: mode === "mytasks",
+    isTimelineActive: mode === "timeline",
     myTasksCount: myTasks.filter((t) => !t.isComplete).length,
     userProfile: currentUser,
     onSelectProject: (id) => { selectProject(id); sidebarEl.classList.remove("is-open"); },
     onSelectMyTasks: () => { selectMyTasks(); sidebarEl.classList.remove("is-open"); },
+    onSelectTimeline: () => { selectTimeline(); sidebarEl.classList.remove("is-open"); },
     onCreateProject: () =>
       openProjectModal({
         onCreate: async (data) => {
@@ -140,13 +181,30 @@ function renderShell() {
     return;
   }
 
+  if (mode === "timeline") {
+    const allGlobalTasks = Object.values(globalTasksByProject).flat();
+    topbarEl.innerHTML = `
+      <div>
+        <span class="topbar__title">Línea de tiempo</span>
+        <span class="topbar__count">todos los proyectos</span>
+      </div>`;
+    const groups = projects.map((p) => ({
+      id: p.id,
+      label: p.name,
+      color: p.color,
+      tasks: (globalTasksByProject[p.id] || []).filter((t) => !t.isComplete),
+    }));
+    renderTimelineView(mainContentEl, { groups, onOpenTask: openTask });
+    return;
+  }
+
   if (!currentProject) {
     topbarEl.innerHTML = "";
     mainContentEl.innerHTML = `
       <div class="empty-state">
         <span class="empty-state__eyebrow">— SIN PROYECTO —</span>
         <h2>${projects.length ? "Selecciona un proyecto" : "Crea tu primer proyecto"}</h2>
-        <p>Los proyectos organizan las tareas de tu equipo en secciones. Puedes verlas en lista, tablero o calendario.</p>
+        <p>Los proyectos organizan las tareas de tu equipo en secciones. Puedes verlas en lista, tablero, calendario o línea de tiempo.</p>
       </div>`;
     return;
   }
@@ -175,6 +233,15 @@ function renderMain() {
       onAddTaskOnDate: (dateKey) => openNewProjectTask(currentProject.sections[0]?.id, dateKey),
       onMonthChange: (d) => { calendarViewDate = d; renderMain(); },
     });
+  } else if (currentView === "timeline") {
+    const sectionsSorted = [...currentProject.sections].sort((a, b) => a.order - b.order);
+    const groups = sectionsSorted.map((s) => ({
+      id: s.id,
+      label: s.name,
+      color: currentProject.color,
+      tasks: currentTasks.filter((t) => t.sectionId === s.id),
+    }));
+    renderTimelineView(mainContentEl, { groups, onOpenTask: openTask });
   } else {
     renderListView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
   }
@@ -211,16 +278,19 @@ function openNewPersonalTask() {
 }
 
 function openTask(taskId) {
-  // La tarea puede venir de "Mis tareas" (de un proyecto distinto al
-  // seleccionado, o ser un recordatorio personal sin proyecto), así que
-  // buscamos su contexto real entre lo que ya tenemos cargado.
-  const pool = mode === "mytasks" ? myTasks : currentTasks;
+  // La tarea puede venir de "Mis tareas" o de la línea de tiempo global
+  // (de un proyecto distinto al seleccionado, o ser un recordatorio
+  // personal sin proyecto), así que buscamos su contexto real entre lo
+  // que ya tenemos cargado.
+  const pool = mode === "mytasks" ? myTasks : mode === "timeline" ? Object.values(globalTasksByProject).flat() : currentTasks;
   const task = pool.find((t) => t.id === taskId);
   const isPersonal = task ? !task.projectId : false;
   const taskProject = !isPersonal
     ? (task && projects.find((p) => p.id === task.projectId)) || currentProject
     : null;
-  const relatedTasks = taskProject ? pool.filter((t) => t.projectId === taskProject.id) : [];
+  const relatedTasks = taskProject
+    ? (mode === "timeline" ? (globalTasksByProject[taskProject.id] || []) : pool.filter((t) => t.projectId === taskProject.id))
+    : [];
 
   openTaskModal({
     taskId,

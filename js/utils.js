@@ -53,6 +53,20 @@ export function isOverdue(value, isComplete) {
   return d.getTime() < today.getTime();
 }
 
+export function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+/** Días completos entre dos fechas (b - a), ignorando la hora. */
+export function daysBetween(a, b) {
+  const MS_DAY = 24 * 60 * 60 * 1000;
+  const da = new Date(a); da.setHours(0, 0, 0, 0);
+  const db = new Date(b); db.setHours(0, 0, 0, 0);
+  return Math.round((db.getTime() - da.getTime()) / MS_DAY);
+}
+
 /** Iniciales para avatares: "Ramón Panduro" -> "RP". */
 export function initials(name) {
   if (!name) return "?";

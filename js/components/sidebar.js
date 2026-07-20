@@ -5,7 +5,7 @@ import { initials, colorFromString, escapeHtml } from "../utils.js";
 import { openContextMenu } from "./context-menu.js";
 import { updateProject, deleteProjectWithTasks } from "../data/projects.js";
 
-export function renderSidebar(container, { projects, currentProjectId, isMyTasksActive, myTasksCount, userProfile, onSelectProject, onSelectMyTasks, onCreateProject, onLogout }) {
+export function renderSidebar(container, { projects, currentProjectId, isMyTasksActive, isTimelineActive, myTasksCount, userProfile, onSelectProject, onSelectMyTasks, onSelectTimeline, onCreateProject, onLogout }) {
   const items = projects.map((p) => `
     <button class="sidebar__item${p.id === currentProjectId ? " is-active" : ""}" data-project-id="${p.id}">
       <span class="sidebar__item-dot" style="background:${p.color || "#FCD000"}"></span>
@@ -26,6 +26,10 @@ export function renderSidebar(container, { projects, currentProjectId, isMyTasks
       <span class="sidebar__item-icon">🗂️</span>
       <span class="sidebar__item-name">Mis tareas</span>
       ${myTasksCount ? `<span class="sidebar__item-count">${myTasksCount}</span>` : ""}
+    </button>
+    <button class="sidebar__item sidebar__item--pinned${isTimelineActive ? " is-active" : ""}" id="btn-timeline">
+      <span class="sidebar__item-icon">📅</span>
+      <span class="sidebar__item-name">Línea de tiempo</span>
     </button>
 
     <span class="sidebar__section-label">Proyectos</span>
@@ -68,6 +72,7 @@ export function renderSidebar(container, { projects, currentProjectId, isMyTasks
     });
   });
   container.querySelector("#btn-my-tasks").addEventListener("click", onSelectMyTasks);
+  container.querySelector("#btn-timeline").addEventListener("click", onSelectTimeline);
   container.querySelector("#btn-new-project").addEventListener("click", onCreateProject);
   container.querySelector("#btn-logout").addEventListener("click", onLogout);
 }

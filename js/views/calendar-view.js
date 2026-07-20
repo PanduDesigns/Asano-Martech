@@ -1,15 +1,32 @@
 // ============================================================================
-// Vista de Calendario: cuadrícula mensual con las tareas en su fecha límite.
-// Las marcadas como hito se resaltan con un borde dorado y bandera.
+// Vista de Calendario: cuadrícula mensual. Una tarea con fecha de inicio Y
+// fecha límite se dibuja como una barra que cubre toda su duración (puede
+// cruzar de una semana a la siguiente, se corta y continúa en la fila de
+// abajo). Si solo tiene una de las dos fechas, se dibuja como un bloque de
+// un día. Los hitos siempre se marcan como un rombo en su fecha.
 // ============================================================================
-import { escapeHtml, toDateInputValue } from "../utils.js";
+import { escapeHtml, toDate, toDateInputValue, daysBetween } from "../utils.js";
 
 const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const MESES_LARGOS = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ];
-const MAX_PER_DAY = 3;
+const MAX_LANES = 4;
+
+const PRIORITY_COLORS = {
+  urgente: "var(--color-danger)",
+  alta: "var(--color-signal)",
+  media: "#78848C",
+  baja: "var(--color-text-faint)",
+};
+
+function effectiveRange(task) {
+  const s = task.startDate ? toDate(task.startDate) : task.dueDate ? toDate(task.dueDate) : null;
+  const e = task.dueDate ? toDate(task.dueDate) : task.startDate ? toDate(task.startDate) : null;
+  if (!s || !e) return null;
+  return e < s ? [e, s] : [s, e];
+}
 
 export function renderCalendarView(container, { tasks, viewDate, onOpenTask, onAddTaskOnDate, onMonthChange }) {
   const year = viewDate.getFullYear();
@@ -21,28 +38,23 @@ export function renderCalendarView(container, { tasks, viewDate, onOpenTask, onA
   const daysInPrevMonth = new Date(year, month, 0).getDate();
   const firstWeekday = (firstOfMonth.getDay() + 6) % 7; // 0=Lunes
 
-  const byDate = new Map();
-  tasks.forEach((t) => {
-    if (!t.dueDate) return;
-    const key = toDateInputValue(t.dueDate);
-    if (!key) return;
-    if (!byDate.has(key)) byDate.set(key, []);
-    byDate.get(key).push(t);
-  });
-  byDate.forEach((list) => list.sort((a, b) => (b.isMilestone ? 1 : 0) - (a.isMilestone ? 1 : 0)));
-
   const totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
-  const cells = [];
+  const dayInfos = [];
   for (let i = 0; i < totalCells; i++) {
     const dayNum = i - firstWeekday + 1;
     if (dayNum < 1) {
-      cells.push({ key: null, label: daysInPrevMonth + dayNum, otherMonth: true, tasks: [] });
+      dayInfos.push({ date: new Date(year, month, dayNum), label: daysInPrevMonth + dayNum, otherMonth: true });
     } else if (dayNum > daysInMonth) {
-      cells.push({ key: null, label: dayNum - daysInMonth, otherMonth: true, tasks: [] });
+      dayInfos.push({ date: new Date(year, month, dayNum), label: dayNum - daysInMonth, otherMonth: true });
     } else {
-      const key = toDateInputValue(new Date(year, month, dayNum));
-      cells.push({ key, label: dayNum, otherMonth: false, tasks: byDate.get(key) || [] });
+      dayInfos.push({ date: new Date(year, month, dayNum), label: dayNum, otherMonth: false });
     }
+  }
+
+  const withDates = tasks.filter((t) => effectiveRange(t));
+  let weeksHtml = "";
+  for (let w = 0; w < dayInfos.length; w += 7) {
+    weeksHtml += buildWeek(dayInfos.slice(w, w + 7), withDates, todayKey);
   }
 
   container.innerHTML = `
@@ -53,30 +65,10 @@ export function renderCalendarView(container, { tasks, viewDate, onOpenTask, onA
         <button class="btn btn--ghost btn--sm" id="cal-next">›</button>
         <button class="btn btn--ghost btn--sm" id="cal-today" style="margin-left:auto;">Hoy</button>
       </div>
-      <div class="calendar-grid">
+      <div class="calendar-weekdays">
         ${DIAS_SEMANA.map((d) => `<div class="calendar-weekday">${d}</div>`).join("")}
-        ${cells
-          .map((cell) => {
-            const isToday = cell.key === todayKey;
-            const visible = cell.tasks.slice(0, MAX_PER_DAY);
-            const extra = cell.tasks.length - visible.length;
-            return `
-            <div class="calendar-day${cell.otherMonth ? " is-other-month" : ""}${isToday ? " is-today" : ""}">
-              <div style="display:flex;align-items:center;">
-                <span class="calendar-day__number">${cell.label}</span>
-                ${!cell.otherMonth ? `<button class="calendar-day__add" data-add-date="${cell.key}" title="Nueva tarea este día">+</button>` : ""}
-              </div>
-              ${visible
-                .map(
-                  (t) => `
-                <div class="calendar-task-chip${t.isMilestone ? " is-milestone" : ""}" data-open="${t.id}">${t.isMilestone ? "🚩 " : ""}${escapeHtml(t.title)}</div>`
-                )
-                .join("")}
-              ${extra > 0 ? `<div class="calendar-more" data-more="${cell.key}">+${extra} más</div>` : ""}
-            </div>`;
-          })
-          .join("")}
       </div>
+      <div class="calendar-weeks">${weeksHtml}</div>
     </div>
   `;
 
@@ -90,11 +82,69 @@ export function renderCalendarView(container, { tasks, viewDate, onOpenTask, onA
   container.querySelectorAll("[data-add-date]").forEach((btn) => {
     btn.addEventListener("click", () => onAddTaskOnDate(btn.dataset.addDate));
   });
-  container.querySelectorAll("[data-more]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.more;
-      const dayTasks = byDate.get(key) || [];
-      if (dayTasks.length) onOpenTask(dayTasks[MAX_PER_DAY]?.id || dayTasks[0].id);
-    });
+}
+
+function buildWeek(weekDays, tasks, todayKey) {
+  const weekStart = weekDays[0].date;
+  const weekEnd = weekDays[6].date;
+
+  const items = [];
+  tasks.forEach((t) => {
+    const [s, e] = effectiveRange(t);
+    if (e < weekStart || s > weekEnd) return;
+    const segS = Math.max(0, daysBetween(weekStart, s));
+    const segE = Math.min(6, daysBetween(weekStart, e));
+    items.push({ task: t, segS, segE });
   });
+  items.sort((a, b) => a.segS - b.segS || b.segE - b.segS - (a.segE - a.segS));
+
+  const laneEnds = [];
+  let overflowCount = 0;
+  const firstOverflowTaskId = { id: null };
+  items.forEach((item) => {
+    let lane = laneEnds.findIndex((end) => end < item.segS);
+    if (lane === -1) lane = laneEnds.length;
+    if (lane >= MAX_LANES) {
+      item.hidden = true;
+      overflowCount++;
+      if (!firstOverflowTaskId.id) firstOverflowTaskId.id = item.task.id;
+      return;
+    }
+    laneEnds[lane] = item.segE;
+    item.lane = lane;
+  });
+  const laneCount = Math.min(MAX_LANES, laneEnds.length) || 1;
+
+  let cells = "";
+  weekDays.forEach((d, i) => {
+    const key = toDateInputValue(d.date);
+    const isToday = key === todayKey;
+    cells += `<div class="cal-daybg${d.otherMonth ? " is-other-month" : ""}${isToday ? " is-today" : ""}" style="grid-column:${i + 1};grid-row:1 / -1;"></div>`;
+    cells += `<div class="cal-daynum${isToday ? " is-today" : ""}" style="grid-column:${i + 1};grid-row:1;">
+      <span>${d.label}</span>
+      ${!d.otherMonth ? `<button class="calendar-day__add" data-add-date="${key}" title="Nueva tarea este día">+</button>` : ""}
+    </div>`;
+  });
+
+  items.filter((i) => !i.hidden).forEach((item) => {
+    const t = item.task;
+    const gridRow = item.lane + 2;
+    if (t.isMilestone) {
+      cells += `<div class="cal-milestone" data-open="${t.id}" title="${escapeHtml(t.title)}" style="grid-column:${item.segE + 1};grid-row:${gridRow};">
+        <span class="cal-milestone__diamond"></span><span class="cal-bar__label">${escapeHtml(t.title)}</span>
+      </div>`;
+    } else {
+      const color = PRIORITY_COLORS[t.priority] || "var(--color-line-bright)";
+      cells += `<div class="cal-bar${t.isComplete ? " is-complete" : ""}" data-open="${t.id}" title="${escapeHtml(t.title)}" style="grid-column:${item.segS + 1} / ${item.segE + 2};grid-row:${gridRow};background:${color};">
+        <span class="cal-bar__label">${escapeHtml(t.title)}</span>
+      </div>`;
+    }
+  });
+
+  if (overflowCount > 0) {
+    cells += `<div class="calendar-more" data-open="${firstOverflowTaskId.id}" style="grid-column:1 / 8;grid-row:${laneCount + 2};">+${overflowCount} más</div>`;
+  }
+
+  const rows = laneCount + (overflowCount > 0 ? 1 : 0);
+  return `<div class="calendar-week" style="grid-template-rows:26px repeat(${rows}, 20px);">${cells}</div>`;
 }

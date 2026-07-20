@@ -7,6 +7,7 @@ const VIEWS = [
   { id: "list", label: "Lista" },
   { id: "board", label: "Tablero" },
   { id: "calendar", label: "Calendario" },
+  { id: "timeline", label: "Línea de tiempo" },
 ];
 
 export function renderTopbar(container, { project, taskCount, currentView, onViewChange, onNewTask, onToggleSidebar }) {

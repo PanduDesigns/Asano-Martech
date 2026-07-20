@@ -76,6 +76,12 @@ Al escribir una etiqueta en una tarea, se sugieren las que ya existen (con su co
 ### Mis tareas: recordatorios personales
 El botón "+ Tarea personal" en "Mis tareas" crea una tarea que **solo tú puedes ver** (sin proyecto, sin responsables) — para apuntes y recordatorios propios. Se distinguen con la etiqueta "🔒 Personal".
 
+### Línea de tiempo / Gantt
+Dos formas de verla: por proyecto (pestaña "Línea de tiempo" junto a Lista/Tablero/Calendario, agrupada por sección) o global para todo el departamento (botón fijo en la barra lateral, agrupada por proyecto). Una tarea con fecha de inicio y fecha límite se dibuja como una barra que cubre toda su duración; con una sola fecha, como un bloque de un día; los hitos siempre como un rombo. La línea vertical dorada marca el día de hoy.
+
+### Calendario: duración completa, no solo el vencimiento
+Igual que en la línea de tiempo, una tarea con inicio y fin se dibuja como una barra que ocupa todos los días entre medias (incluso cruzando de una semana a la siguiente), no solo un punto en la fecha límite.
+
 ---
 
 ## 4. Estructura del proyecto
@@ -103,8 +109,9 @@ js/
   views/
     list-view.js                  Vista de Lista (+ menú contextual de tarea)
     board-view.js                  Vista de Tablero (Kanban con drag & drop)
-    calendar-view.js                Vista de Calendario (con hitos)
-    my-tasks-view.js                 "Mis tareas" (de proyecto + personales)
+    calendar-view.js                Vista de Calendario (barras de duración + hitos)
+    timeline-view.js                 Línea de tiempo/Gantt (por proyecto o global)
+    my-tasks-view.js                  "Mis tareas" (de proyecto + personales)
   app.js                     Conecta todo: sesión, estado, enrutado simple
 firestore.rules             Reglas de seguridad de Firestore
 ```
@@ -119,13 +126,13 @@ firestore.rules             Reglas de seguridad de Firestore
 
 ## 6. Qué falta (próxima iteración)
 
-- Línea de tiempo/Gantt
 - Filtros avanzados, vistas guardadas y búsqueda global
 - Notificaciones dentro de la app
 - Panel con métricas (completadas, vencidas, carga por persona)
 - Campos personalizados (el dato ya existe en el modelo, falta la interfaz)
 - Automatizaciones, formularios de solicitud, revisión de archivos, metas/OKRs, integraciones
 - Pantalla de administración de equipo
+- Flechas de dependencia dibujadas en la línea de tiempo (los datos de "bloqueada por" ya existen, falta representarlos visualmente ahí)
 
 ## 7. Limitaciones conocidas
 

@@ -15,12 +15,16 @@ import { renderTimelineView } from "./views/timeline-view.js";
 import { renderMyTasksView } from "./views/my-tasks-view.js";
 import { openProjectModal } from "./components/project-modal.js";
 import { openTaskModal } from "./components/task-modal.js";
+import { renderFilterBar } from "./components/filter-bar.js";
+import { applyTaskFilters, buildFilterDefs } from "./task-filters.js";
 import { showToast } from "./utils.js";
 
+const loadingScreen = document.getElementById("loading-screen");
 const authScreen = document.getElementById("auth-screen");
 const appShell = document.getElementById("app-shell");
 const sidebarEl = document.getElementById("sidebar");
 const topbarEl = document.getElementById("topbar");
+const filterbarEl = document.getElementById("filterbar");
 const mainContentEl = document.getElementById("main-content");
 
 // ---- estado en memoria ----
@@ -35,6 +39,8 @@ let currentTasks = [];
 let currentView = "list";
 let mode = "project"; // 'project' | 'mytasks' | 'timeline'
 let calendarViewDate = new Date();
+let timelineZoom = "day"; // 'day' | 'week' | 'month'
+let activeFilters = {}; // { [filterKey]: Set(valores) }
 let globalTasksByProject = {}; // { [projectId]: tasks[] } — para la línea de tiempo global
 let unsubGlobalTasks = {}; // { [projectId]: unsubscribeFn }
 
@@ -45,8 +51,8 @@ let unsubTags = null;
 let unsubCurrentProject = null;
 let unsubCurrentTasks = null;
 
-function showApp() { authScreen.classList.add("hidden"); appShell.classList.remove("hidden"); }
-function showAuth() { appShell.classList.add("hidden"); authScreen.classList.remove("hidden"); }
+function showApp() { loadingScreen.classList.add("hidden"); authScreen.classList.add("hidden"); appShell.classList.remove("hidden"); }
+function showAuth() { loadingScreen.classList.add("hidden"); appShell.classList.add("hidden"); authScreen.classList.remove("hidden"); }
 
 onAuthChange((profile) => {
   currentUser = profile;
@@ -66,6 +72,7 @@ function cleanup() {
   unsubGlobalTasks = {}; globalTasksByProject = {};
   projects = []; teamMembers = []; myTasks = []; tagsRegistry = [];
   currentProjectId = null; currentProject = null; currentTasks = []; mode = "project";
+  activeFilters = {};
 }
 
 function bootstrap() {
@@ -127,6 +134,7 @@ function selectProject(projectId) {
   mode = "project";
   if (projectId === currentProjectId) { renderShell(); return; }
   currentProjectId = projectId;
+  activeFilters = {};
   if (unsubCurrentProject) unsubCurrentProject();
   if (unsubCurrentTasks) unsubCurrentTasks();
 
@@ -137,12 +145,26 @@ function selectProject(projectId) {
 
 function selectMyTasks() {
   mode = "mytasks";
+  activeFilters = {};
   renderShell();
 }
 
 function selectTimeline() {
   mode = "timeline";
+  activeFilters = {};
   renderShell();
+}
+
+function setTimelineZoom(zoom) {
+  timelineZoom = zoom;
+  if (mode === "timeline") renderShell();
+  else renderMain();
+}
+
+function handleFilterChange(key, newSet) {
+  activeFilters = { ...activeFilters, [key]: newSet };
+  if (mode === "project") renderMain();
+  else renderShell();
 }
 
 function renderShell() {
@@ -177,29 +199,35 @@ function renderShell() {
       </div>
       <button class="btn btn--primary btn--sm" id="btn-new-personal-task" style="margin-left:auto;">+ Tarea personal</button>`;
     topbarEl.querySelector("#btn-new-personal-task").addEventListener("click", openNewPersonalTask);
-    renderMyTasksView(mainContentEl, { tasks: myTasks, teamMembers, projects, tagsRegistry, onOpenTask: openTask });
+
+    const filterDefs = buildFilterDefs({ teamMembers, tagsRegistry });
+    renderFilterBar(filterbarEl, { filterDefs, activeFilters, onChange: handleFilterChange });
+    const filteredMyTasks = applyTaskFilters(myTasks, activeFilters);
+    renderMyTasksView(mainContentEl, { tasks: filteredMyTasks, teamMembers, projects, tagsRegistry, onOpenTask: openTask });
     return;
   }
 
   if (mode === "timeline") {
-    const allGlobalTasks = Object.values(globalTasksByProject).flat();
     topbarEl.innerHTML = `
       <div>
         <span class="topbar__title">Línea de tiempo</span>
         <span class="topbar__count">todos los proyectos</span>
       </div>`;
+    const filterDefs = buildFilterDefs({ teamMembers, tagsRegistry, includeStatus: false });
+    renderFilterBar(filterbarEl, { filterDefs, activeFilters, onChange: handleFilterChange });
     const groups = projects.map((p) => ({
       id: p.id,
       label: p.name,
       color: p.color,
-      tasks: (globalTasksByProject[p.id] || []).filter((t) => !t.isComplete),
+      tasks: applyTaskFilters((globalTasksByProject[p.id] || []).filter((t) => !t.isComplete), activeFilters),
     }));
-    renderTimelineView(mainContentEl, { groups, onOpenTask: openTask });
+    renderTimelineView(mainContentEl, { groups, zoom: timelineZoom, onZoomChange: setTimelineZoom, onOpenTask: openTask });
     return;
   }
 
   if (!currentProject) {
     topbarEl.innerHTML = "";
+    filterbarEl.innerHTML = "";
     mainContentEl.innerHTML = `
       <div class="empty-state">
         <span class="empty-state__eyebrow">— SIN PROYECTO —</span>
@@ -223,11 +251,16 @@ function renderShell() {
 
 function renderMain() {
   if (mode !== "project" || !currentProject) return;
+
+  const filterDefs = buildFilterDefs({ teamMembers, tagsRegistry, project: currentProject });
+  renderFilterBar(filterbarEl, { filterDefs, activeFilters, onChange: handleFilterChange });
+  const filteredTasks = applyTaskFilters(currentTasks, activeFilters);
+
   if (currentView === "board") {
-    renderBoardView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
+    renderBoardView(mainContentEl, { project: currentProject, tasks: filteredTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
   } else if (currentView === "calendar") {
     renderCalendarView(mainContentEl, {
-      tasks: currentTasks,
+      tasks: filteredTasks,
       viewDate: calendarViewDate,
       onOpenTask: openTask,
       onAddTaskOnDate: (dateKey) => openNewProjectTask(currentProject.sections[0]?.id, dateKey),
@@ -239,11 +272,11 @@ function renderMain() {
       id: s.id,
       label: s.name,
       color: currentProject.color,
-      tasks: currentTasks.filter((t) => t.sectionId === s.id),
+      tasks: filteredTasks.filter((t) => t.sectionId === s.id),
     }));
-    renderTimelineView(mainContentEl, { groups, onOpenTask: openTask });
+    renderTimelineView(mainContentEl, { groups, zoom: timelineZoom, onZoomChange: setTimelineZoom, onOpenTask: openTask });
   } else {
-    renderListView(mainContentEl, { project: currentProject, tasks: currentTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
+    renderListView(mainContentEl, { project: currentProject, tasks: filteredTasks, teamMembers, tagsRegistry, onOpenTask: openTask, onAddTask: openNewProjectTask });
   }
 }
 

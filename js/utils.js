@@ -67,6 +67,23 @@ export function daysBetween(a, b) {
   return Math.round((db.getTime() - da.getTime()) / MS_DAY);
 }
 
+/** Número de semana ISO 8601 (semanas de lunes a domingo, semana 1 = la que contiene el primer jueves del año). */
+export function isoWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7; // lunes=0
+  d.setUTCDate(d.getUTCDate() - dayNum + 3); // jueves de esta semana
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstThursdayDayNum = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNum + 3);
+  return 1 + Math.round((d - firstThursday) / (7 * 24 * 60 * 60 * 1000));
+}
+
+/** Lunes de la semana que contiene `date`. */
+export function mondayOf(date) {
+  const day = (date.getDay() + 6) % 7;
+  return addDays(date, -day);
+}
+
 /** Iniciales para avatares: "Ramón Panduro" -> "RP". */
 export function initials(name) {
   if (!name) return "?";

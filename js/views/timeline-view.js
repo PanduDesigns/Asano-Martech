@@ -3,17 +3,19 @@
 // por proyecto) o de proyectos (vista global) con sus tareas ya dentro, así
 // la misma vista sirve para los dos casos sin duplicar lógica.
 //
+// Zoom con un clic entre días / semanas / meses (`zoom`, controlado desde
+// fuera vía `onZoomChange` para que se recuerde al cambiar de vista). En
+// semanas se indica el número de semana ISO del año.
+//
 // Cómo se calcula cada barra: si la tarea tiene fecha de inicio Y fecha
-// límite, la barra cubre todo ese rango. Si solo tiene una de las dos, se
-// dibuja un marcador de un día en esa fecha. Los hitos siempre se dibujan
-// como un rombo en su fecha, nunca como barra (por definición no tienen
-// duración).
+// límite, la barra cubre todo ese rango (recortado a las columnas visibles
+// según el zoom). Si solo tiene una de las dos, se dibuja un marcador de
+// una columna en esa fecha. Los hitos siempre se dibujan como un rombo,
+// nunca como barra.
 // ============================================================================
-import { escapeHtml, toDate, addDays, daysBetween } from "../utils.js";
+import { escapeHtml, toDate, addDays, daysBetween, isoWeekNumber, mondayOf } from "../utils.js";
 import { openTaskContextMenu } from "./list-view.js";
 
-const DAY_W = 32;
-const LABEL_W = 224;
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 const PRIORITY_COLORS = {
@@ -23,25 +25,27 @@ const PRIORITY_COLORS = {
   baja: "var(--color-text-faint)",
 };
 
-export function renderTimelineView(container, { groups, onOpenTask }) {
+const ZOOM_CONFIG = {
+  day: { width: 32, label: "Días" },
+  week: { width: 64, label: "Semanas" },
+  month: { width: 96, label: "Meses" },
+};
+
+export function renderTimelineView(container, { groups, zoom, onZoomChange, onOpenTask }) {
+  const unit = zoom || "day";
   const allTasks = groups.flatMap((g) => g.tasks);
   const withDates = allTasks.filter((t) => t.startDate || t.dueDate);
   const withoutDates = allTasks.length - withDates.length;
 
-  let rangeStart, rangeEnd;
-  if (withDates.length) {
-    const dates = withDates.flatMap((t) => [t.startDate && toDate(t.startDate), t.dueDate && toDate(t.dueDate)].filter(Boolean));
-    rangeStart = addDays(new Date(Math.min(...dates)), -3);
-    rangeEnd = addDays(new Date(Math.max(...dates)), 4);
-  } else {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    rangeStart = addDays(today, -3);
-    rangeEnd = addDays(today, 25);
-  }
-  const dayCount = Math.max(1, daysBetween(rangeStart, rangeEnd) + 1);
-  const days = Array.from({ length: dayCount }, (_, i) => addDays(rangeStart, i));
-  const todayIdx = daysBetween(rangeStart, new Date());
+  const dateList = withDates.flatMap((t) => [t.startDate && toDate(t.startDate), t.dueDate && toDate(t.dueDate)].filter(Boolean));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let rawMin = dateList.length ? new Date(Math.min(...dateList)) : addDays(today, -3);
+  let rawMax = dateList.length ? new Date(Math.max(...dateList)) : addDays(today, 25);
+
+  const columns = buildColumns(unit, rawMin, rawMax);
+  const colWidth = ZOOM_CONFIG[unit].width;
+  const todayIdx = columns.findIndex((c) => today >= c.start && today <= c.end);
 
   const rows = [];
   groups.forEach((g) => {
@@ -50,27 +54,37 @@ export function renderTimelineView(container, { groups, onOpenTask }) {
     g.tasks.forEach((t) => rows.push({ type: "task", task: t }));
   });
 
+  const zoomButtons = Object.keys(ZOOM_CONFIG)
+    .map((key) => `<button type="button" class="topbar__view-btn${key === unit ? " is-active" : ""}" data-zoom="${key}">${ZOOM_CONFIG[key].label}</button>`)
+    .join("");
+
   if (!rows.length) {
     container.innerHTML = `
-      <div class="empty-state">
-        <span class="empty-state__eyebrow">— LÍNEA DE TIEMPO —</span>
-        <h2>Nada que mostrar todavía</h2>
-        <p>Ponle fecha de inicio y/o fecha límite a alguna tarea para que aparezca aquí.</p>
+      <div class="timeline">
+        <div class="timeline__toolbar">
+          <div class="topbar__views" style="margin-left:0;">${zoomButtons}</div>
+        </div>
+        <div class="empty-state">
+          <span class="empty-state__eyebrow">— LÍNEA DE TIEMPO —</span>
+          <h2>Nada que mostrar todavía</h2>
+          <p>Ponle fecha de inicio y/o fecha límite a alguna tarea para que aparezca aquí.</p>
+        </div>
       </div>`;
+    container.querySelectorAll("[data-zoom]").forEach((btn) => btn.addEventListener("click", () => onZoomChange(btn.dataset.zoom)));
     return;
   }
 
   const totalRows = rows.length + 1;
-  const gridTemplateColumns = `${LABEL_W}px repeat(${dayCount}, ${DAY_W}px)`;
+  const LABEL_W = 224;
+  const gridTemplateColumns = `${LABEL_W}px repeat(${columns.length}, ${colWidth}px)`;
 
   let cells = `<div class="tl-cell tl-corner" style="grid-column:1;grid-row:1;"></div>`;
 
-  days.forEach((d, i) => {
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const isMonthStart = d.getDate() === 1 || i === 0;
+  columns.forEach((c, i) => {
+    const isWeekend = unit === "day" && (c.start.getDay() === 0 || c.start.getDay() === 6);
     cells += `<div class="tl-daycol${isWeekend ? " is-weekend" : ""}" style="grid-column:${i + 2};grid-row:1;">
-      ${isMonthStart ? `<span class="tl-month">${MESES[d.getMonth()]}</span>` : ""}
-      <span class="tl-daynum">${d.getDate()}</span>
+      ${c.topLabel ? `<span class="tl-month">${c.topLabel}</span>` : ""}
+      <span class="tl-daynum">${c.label}</span>
     </div>`;
   });
 
@@ -78,14 +92,14 @@ export function renderTimelineView(container, { groups, onOpenTask }) {
     const gridRow = ri + 2;
     if (row.type === "group") {
       cells += `<div class="tl-group-label" style="grid-column:1;grid-row:${gridRow};"><span class="tl-group-dot" style="background:${row.color}"></span>${escapeHtml(row.label)}</div>`;
-      cells += `<div class="tl-group-band" style="grid-column:2 / ${dayCount + 2};grid-row:${gridRow};"></div>`;
+      cells += `<div class="tl-group-band" style="grid-column:2 / ${columns.length + 2};grid-row:${gridRow};"></div>`;
       return;
     }
     const t = row.task;
     cells += `<div class="tl-task-label" data-open="${t.id}" data-task-id="${t.id}" title="${escapeHtml(t.title)}" style="grid-column:1;grid-row:${gridRow};${t.isComplete ? "color:var(--color-text-faint);text-decoration:line-through;" : ""}">${t.isMilestone ? "🚩 " : ""}${escapeHtml(t.title)}</div>`;
-    cells += `<div class="tl-row-band" style="grid-column:2 / ${dayCount + 2};grid-row:${gridRow};"></div>`;
+    cells += `<div class="tl-row-band" style="grid-column:2 / ${columns.length + 2};grid-row:${gridRow};"></div>`;
 
-    const span = taskSpan(t, rangeStart, dayCount);
+    const span = taskSpan(t, columns);
     if (!span) return;
     if (t.isMilestone) {
       cells += `<div class="tl-milestone" data-open="${t.id}" data-task-id="${t.id}" title="${escapeHtml(t.title)}" style="grid-column:${span.e + 2};grid-row:${gridRow};"><span class="tl-milestone__diamond"></span></div>`;
@@ -95,13 +109,14 @@ export function renderTimelineView(container, { groups, onOpenTask }) {
     }
   });
 
-  if (todayIdx >= 0 && todayIdx < dayCount) {
+  if (todayIdx >= 0) {
     cells += `<div class="tl-today-line" style="grid-column:${todayIdx + 2};grid-row:1 / ${totalRows + 1};"></div>`;
   }
 
   container.innerHTML = `
     <div class="timeline">
       <div class="timeline__toolbar">
+        <div class="topbar__views" style="margin-left:0;">${zoomButtons}</div>
         <button class="btn btn--ghost btn--sm" id="tl-today-btn">Hoy</button>
         ${withoutDates > 0 ? `<span class="timeline__hint">${withoutDates} ${withoutDates === 1 ? "tarea sin fecha no se muestra" : "tareas sin fecha no se muestran"} aquí</span>` : ""}
       </div>
@@ -113,13 +128,15 @@ export function renderTimelineView(container, { groups, onOpenTask }) {
     </div>
   `;
 
+  container.querySelectorAll("[data-zoom]").forEach((btn) => btn.addEventListener("click", () => onZoomChange(btn.dataset.zoom)));
+
   const scrollBox = container.querySelector("#tl-scroll");
   const scrollToToday = () => {
-    const x = Math.max(0, LABEL_W + todayIdx * DAY_W - scrollBox.clientWidth / 2);
+    const x = Math.max(0, LABEL_W + todayIdx * colWidth - scrollBox.clientWidth / 2);
     scrollBox.scrollTo({ left: x, behavior: "smooth" });
   };
   container.querySelector("#tl-today-btn").addEventListener("click", scrollToToday);
-  if (todayIdx >= 0 && todayIdx < dayCount) requestAnimationFrame(scrollToToday);
+  if (todayIdx >= 0) requestAnimationFrame(scrollToToday);
 
   container.querySelectorAll("[data-open]").forEach((elx) => {
     elx.addEventListener("click", () => onOpenTask(elx.dataset.open));
@@ -131,14 +148,70 @@ export function renderTimelineView(container, { groups, onOpenTask }) {
   });
 }
 
-function taskSpan(task, rangeStart, dayCount) {
+// --------------------------------------------------------------------
+// Columnas según el zoom: cada una es { start, end, label, topLabel }
+// --------------------------------------------------------------------
+function buildColumns(unit, rawMin, rawMax) {
+  if (unit === "week") {
+    let cursor = mondayOf(addDays(rawMin, -7));
+    const end = addDays(rawMax, 7);
+    const cols = [];
+    while (cursor <= end) {
+      const weekEnd = addDays(cursor, 6);
+      cols.push({
+        start: cursor,
+        end: weekEnd,
+        label: `S${isoWeekNumber(cursor)}`,
+        topLabel: cursor.getDate() <= 7 ? `${MESES[cursor.getMonth()]} ${cursor.getFullYear()}` : "",
+      });
+      cursor = addDays(cursor, 7);
+    }
+    return cols;
+  }
+  if (unit === "month") {
+    let cursor = new Date(rawMin.getFullYear(), rawMin.getMonth() - 1, 1);
+    const end = new Date(rawMax.getFullYear(), rawMax.getMonth() + 2, 0);
+    const cols = [];
+    while (cursor <= end) {
+      const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+      cols.push({
+        start: new Date(cursor),
+        end: monthEnd,
+        label: MESES[cursor.getMonth()],
+        topLabel: cursor.getMonth() === 0 ? String(cursor.getFullYear()) : "",
+      });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+    return cols;
+  }
+  // día (por defecto)
+  const start = addDays(rawMin, -3);
+  const end = addDays(rawMax, 4);
+  const count = Math.max(1, daysBetween(start, end) + 1);
+  return Array.from({ length: count }, (_, i) => {
+    const d = addDays(start, i);
+    return {
+      start: d,
+      end: d,
+      label: String(d.getDate()),
+      topLabel: d.getDate() === 1 || i === 0 ? MESES[d.getMonth()] : "",
+    };
+  });
+}
+
+function taskSpan(task, columns) {
   const start = task.startDate ? toDate(task.startDate) : task.dueDate ? toDate(task.dueDate) : null;
   const end = task.dueDate ? toDate(task.dueDate) : task.startDate ? toDate(task.startDate) : null;
   if (!start || !end) return null;
-  let s = daysBetween(rangeStart, start);
-  let e = daysBetween(rangeStart, end);
-  s = Math.max(0, Math.min(s, dayCount - 1));
-  e = Math.max(0, Math.min(e, dayCount - 1));
-  if (e < s) e = s;
-  return { s, e };
+  const [s, e] = end < start ? [end, start] : [start, end];
+
+  let sIdx = columns.findIndex((c) => s <= c.end);
+  if (sIdx === -1) sIdx = columns.length - 1;
+  let eIdx = -1;
+  for (let i = columns.length - 1; i >= 0; i--) {
+    if (columns[i].start <= e) { eIdx = i; break; }
+  }
+  if (eIdx === -1) eIdx = 0;
+  if (eIdx < sIdx) eIdx = sIdx;
+  return { s: sIdx, e: eIdx };
 }

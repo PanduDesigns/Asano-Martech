@@ -85,6 +85,23 @@ a { color: var(--color-signal); }
 }
 
 /* ==========================================================================
+   Loading screen (mientras se resuelve el estado de sesión)
+   ========================================================================== */
+.loading-screen {
+  position: fixed; inset: 0; z-index: 500;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-void);
+}
+.loading-screen__logo {
+  width: 140px; border-radius: var(--radius-sm);
+  animation: loading-pulse 1.4s ease-in-out infinite;
+}
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ==========================================================================
    Auth screen
    ========================================================================== */
 .auth-screen {
@@ -661,6 +678,40 @@ a { color: var(--color-signal); }
   background: var(--color-signal); width: 2px; opacity: 0.6;
   pointer-events: none; z-index: 1; justify-self: center;
 }
+
+/* ==========================================================================
+   Filter bar
+   ========================================================================== */
+.filterbar { padding: 0 32px; min-height: 0; }
+.filterbar:empty { display: none; }
+.filterbar__row { display: flex; align-items: center; gap: 8px; padding: 10px 0; flex-wrap: wrap; }
+.filterbar__label { font-size: 12px; color: var(--color-text-faint); margin-right: 2px; }
+.filterbar__btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--color-panel); border: 1px solid var(--color-line);
+  color: var(--color-text-lo); font-size: 12.5px; padding: 6px 12px;
+  border-radius: 20px; transition: var(--transition-fast);
+}
+.filterbar__btn:hover { border-color: var(--color-line-bright); color: var(--color-text-hi); }
+.filterbar__btn.has-active { border-color: var(--color-signal-dim); color: var(--color-signal); background: var(--color-signal-soft); }
+.filterbar__count {
+  font-family: var(--font-mono); font-size: 10px; background: var(--color-signal); color: var(--color-void);
+  border-radius: 20px; padding: 0 6px; font-weight: 700;
+}
+.filterbar__clear { background: none; border: none; color: var(--color-text-faint); font-size: 12px; padding: 6px 4px; }
+.filterbar__clear:hover { color: var(--color-danger); }
+
+.filter-popover {
+  position: fixed; z-index: 300; min-width: 200px; max-height: 280px; overflow-y: auto;
+  background: var(--color-panel-raised); border: 1px solid var(--color-line-bright);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-raised); padding: 6px;
+}
+.filter-popover__item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--radius-sm);
+  font-size: 12.5px; color: var(--color-text-hi); cursor: pointer;
+}
+.filter-popover__item:hover { background: var(--color-panel); }
+.filter-popover__dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
 
 /* ==========================================================================
    Context menu

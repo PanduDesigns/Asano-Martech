@@ -4,6 +4,7 @@
 import { initials, colorFromString, escapeHtml } from "../utils.js";
 import { openContextMenu } from "./context-menu.js";
 import { updateProject, deleteProjectWithTasks } from "../data/projects.js";
+import { openCustomFieldsModal } from "./custom-fields-modal.js";
 
 export function renderSidebar(container, { projects, currentProjectId, isMyTasksActive, isTimelineActive, myTasksCount, userProfile, onSelectProject, onSelectMyTasks, onSelectTimeline, onCreateProject, onLogout }) {
   const items = projects.map((p) => `
@@ -61,6 +62,7 @@ export function renderSidebar(container, { projects, currentProjectId, isMyTasks
             const name = prompt("Nuevo nombre del proyecto:", project.name);
             if (name && name.trim()) updateProject(project.id, { name: name.trim() });
           } },
+          { label: "Campos personalizados", icon: "☰", onClick: () => openCustomFieldsModal({ project }) },
           { divider: true },
           { label: "Eliminar proyecto", icon: "🗑", danger: true, onClick: async () => {
             if (confirm(`¿Eliminar "${project.name}" y TODAS sus tareas? No se puede deshacer.`)) {

@@ -15,7 +15,16 @@
 <body>
 
 <!-- ============ AUTH SCREEN ============ -->
-<div id="auth-screen" class="auth-screen">
+<!-- ============ LOADING SCREEN ============ -->
+<!-- Se ve por defecto mientras Firebase comprueba si ya hay sesión iniciada,
+     para no enseñar un parpadeo del formulario de login a quien ya tiene
+     cuenta abierta en ese navegador. -->
+<div id="loading-screen" class="loading-screen">
+  <img src="assets/martech-badge.png" alt="" class="loading-screen__logo">
+</div>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen" class="auth-screen hidden">
   <div class="auth-grid" aria-hidden="true"></div>
   <div class="auth-card">
     <div class="auth-brand">
@@ -74,6 +83,7 @@
   <aside class="sidebar" id="sidebar"></aside>
   <div class="main-col">
     <header class="topbar" id="topbar"></header>
+    <div class="filterbar" id="filterbar"></div>
     <main class="main-content" id="main-content">
       <div class="empty-state" id="empty-state">
         <span class="empty-state__eyebrow">— SIN PROYECTO —</span>

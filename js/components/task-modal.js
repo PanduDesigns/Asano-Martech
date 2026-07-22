@@ -41,6 +41,7 @@ function emptyDraft({ defaultSectionId, presetDueDate }) {
     dependsOn: [],
     subtasks: [],
     attachments: [],
+    customFields: {},
     isMilestone: false,
     isComplete: false,
   };
@@ -81,6 +82,7 @@ export function openTaskModal({
         assigneeIds: t.assigneeIds || [], startDate: t.startDate, dueDate: t.dueDate,
         priority: t.priority, tags: t.tags || [], dependsOn: t.dependsOn || [],
         subtasks: t.subtasks || [], attachments: t.attachments || [],
+        customFields: t.customFields || {},
         isMilestone: !!t.isMilestone, isComplete: !!t.isComplete,
       };
       buildForm();
@@ -186,6 +188,15 @@ export function openTaskModal({
             </div>
           </div>` : ""}
 
+          ${!isPersonal && (project?.customFieldDefs || []).length ? (project.customFieldDefs.map((f) => `
+          <label class="field">
+            <span class="field__label">${escapeHtml(f.name)}</span>
+            <select class="field__select" data-custom-field="${f.id}">
+              <option value="">— Sin definir —</option>
+              ${f.options.map((opt) => `<option value="${escapeHtml(opt)}" ${draft.customFields[f.id] === opt ? "selected" : ""}>${escapeHtml(opt)}</option>`).join("")}
+            </select>
+          </label>`).join("")) : ""}
+
           <label class="field">
             <span class="field__label">Descripción</span>
             <textarea class="field__textarea" id="t-description" placeholder="Añade detalles, contexto o enlaces…">${escapeHtml(draft.description)}</textarea>
@@ -259,6 +270,13 @@ export function openTaskModal({
 
     overlay.querySelector("#t-start").addEventListener("change", (e) => { draft.startDate = e.target.value || null; markDirty(); });
     overlay.querySelector("#t-due").addEventListener("change", (e) => { draft.dueDate = e.target.value || null; markDirty(); });
+
+    overlay.querySelectorAll("[data-custom-field]").forEach((sel) => {
+      sel.addEventListener("change", (e) => {
+        draft.customFields = { ...draft.customFields, [sel.dataset.customField]: e.target.value || null };
+        markDirty();
+      });
+    });
 
     const milestoneBtn = overlay.querySelector("#t-milestone");
     milestoneBtn.addEventListener("click", () => {

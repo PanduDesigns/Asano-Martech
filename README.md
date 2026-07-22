@@ -82,6 +82,17 @@ Dos formas de verla: por proyecto (pestaña "Línea de tiempo" junto a Lista/Tab
 ### Calendario: duración completa, no solo el vencimiento
 Igual que en la línea de tiempo, una tarea con inicio y fin se dibuja como una barra que ocupa todos los días entre medias (incluso cruzando de una semana a la siguiente), no solo un punto en la fecha límite.
 
+### Línea de tiempo: zoom por días, semanas o meses
+Botones "Días / Semanas / Meses" en la propia línea de tiempo (por proyecto y global). En semanas, cada columna muestra su número de semana ISO del año (S29, S30…).
+
+### Filtros, incluidas etiquetas y campos personalizados
+Barra de filtros encima de Lista/Tablero/Calendario/Línea de tiempo/Mis tareas: Responsable, Prioridad, Estado, Etiquetas y cualquier campo personalizado del proyecto. Se combinan entre sí y se aplican al momento, sin botón de confirmar.
+
+**Campos personalizados** (por ejemplo "Cliente" con opciones "Talgo, Stelia, Togg"): clic derecho sobre un proyecto en la barra lateral → "Campos personalizados". Una vez creados aparecen como desplegable en cada tarea de ese proyecto y como filtro más.
+
+### Sin parpadeo al abrir la app con sesión iniciada
+Antes se veía un instante la pantalla de login incluso con la sesión ya iniciada, mientras Firebase comprobaba si había cuenta. Ahora se muestra una pantalla de carga mínima hasta saber con certeza si hay sesión o no, y solo entonces aparece la pantalla que corresponda.
+
 ---
 
 ## 4. Estructura del proyecto
@@ -104,13 +115,16 @@ js/
     sidebar.js                  Proyectos + Mis tareas + usuario (clic derecho)
     topbar.js                    Selector de vista + nueva tarea
     project-modal.js             Crear proyecto
-    task-modal.js                 Formulario único de tarea (crear/editar)
-    context-menu.js               Menú contextual reutilizable (clic derecho)
+    custom-fields-modal.js        Definir campos personalizados de un proyecto
+    task-modal.js                  Formulario único de tarea (crear/editar)
+    context-menu.js                Menú contextual reutilizable (clic derecho)
+    filter-bar.js                   Barra de filtros reutilizable
+  task-filters.js             Lógica de filtrado de tareas (compartida por todas las vistas)
   views/
     list-view.js                  Vista de Lista (+ menú contextual de tarea)
     board-view.js                  Vista de Tablero (Kanban con drag & drop)
     calendar-view.js                Vista de Calendario (barras de duración + hitos)
-    timeline-view.js                 Línea de tiempo/Gantt (por proyecto o global)
+    timeline-view.js                 Línea de tiempo/Gantt (por proyecto o global, zoom día/semana/mes)
     my-tasks-view.js                  "Mis tareas" (de proyecto + personales)
   app.js                     Conecta todo: sesión, estado, enrutado simple
 firestore.rules             Reglas de seguridad de Firestore
@@ -119,17 +133,16 @@ firestore.rules             Reglas de seguridad de Firestore
 ## 5. Modelo de datos (Firestore)
 
 - **`users/{uid}`** — `name`, `email`, `role` (`admin` | `miembro`)
-- **`projects/{id}`** — `name`, `description`, `color`, `sections[]`, `memberIds[]` (informativo), `createdBy`
-- **`tasks/{id}`** — `projectId` (null si es personal), `ownerId` (solo tareas personales), `sectionId`, `title`, `description`, `assigneeIds[]`, `startDate`, `dueDate`, `priority`, `tags[]` (nombres; el color vive en `tags/`), `dependsOn[]`, `subtasks[]`, `attachments[]` (`{id,name,url}`), `isComplete`, `isMilestone`, `order`
+- **`projects/{id}`** — `name`, `description`, `color`, `sections[]`, `memberIds[]` (informativo), `customFieldDefs[]` (`{id,name,options[]}`), `createdBy`
+- **`tasks/{id}`** — `projectId` (null si es personal), `ownerId` (solo tareas personales), `sectionId`, `title`, `description`, `assigneeIds[]`, `startDate`, `dueDate`, `priority`, `tags[]` (nombres; el color vive en `tags/`), `dependsOn[]`, `subtasks[]`, `attachments[]` (`{id,name,url}`), `customFields` (`{[fieldId]: valor}`), `isComplete`, `isMilestone`, `order`
 - **`tasks/{id}/comments/{id}`** — `authorId`, `authorName`, `text`
 - **`tags/{slug}`** — `name`, `color`
 
 ## 6. Qué falta (próxima iteración)
 
-- Filtros avanzados, vistas guardadas y búsqueda global
+- Vistas guardadas (guardar una combinación de filtros con un nombre) y búsqueda global de texto
 - Notificaciones dentro de la app
 - Panel con métricas (completadas, vencidas, carga por persona)
-- Campos personalizados (el dato ya existe en el modelo, falta la interfaz)
 - Automatizaciones, formularios de solicitud, revisión de archivos, metas/OKRs, integraciones
 - Pantalla de administración de equipo
 - Flechas de dependencia dibujadas en la línea de tiempo (los datos de "bloqueada por" ya existen, falta representarlos visualmente ahí)
